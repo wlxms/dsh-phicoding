@@ -67,17 +67,35 @@ node H:\Git\dsh-mydsh\dsh-plugins\dsh-phicoding\checks\phicoding.mjs --list
 $env:TEMP = 'H:\Git\dsh-mydsh\.recovery-tmp\temp'; $env:TMP = $env:TEMP
 ```
 
-## 六、还没做的一步：装回 profile
+## 六、装回 profile（已完成 · 手工）
 
-profile 组装也被那次修复重置了——`profiles/web/package.json` 的 `dependencies` 与 `bundles` 里**都没有** `dsh-phicoding`，只剩一个孤儿 junction。所以技能现在**还不是常驻的**。
+profile 组装也被那次修复重置了——`profiles/web/package.json` 的 `dependencies` 与 `bundles` 里**都没有**
+`dsh-phicoding`。而 `node_modules` 里那个链接**是断的**：它是相对符号链接
+（`..\..\..\..\..\..\Git\dsh-mydsh\...`），而**相对链接跨不了盘**——从 `C:` 上的 profile 指不到 `H:` 上的包。
 
-在**普通终端**里跑（本会话的 pwsh 在创建符号链接时被沙箱拒绝，装不了）：
+`dsh plugin --profile web add` 装不了：pnpm 只会建符号链接，而本会话的沙箱拒绝符号链接
+（`此操作需要管理员权限`）。**junction 可以建**——所以手工做了等价的三步：
+
+| 步 | 动作 |
+| --- | --- |
+| 1 | 删掉断链，改建 junction：`profiles/web/node_modules/dsh-phicoding` → `H:\Git\dsh-mydsh\dsh-plugins\dsh-phicoding`（绝对目标） |
+| 2 | `package.json` 的 `dependencies` 加 `"dsh-phicoding": "link:H:/Git/dsh-mydsh/dsh-plugins/dsh-phicoding"` |
+| 3 | `package.json` 的 `dsh.profile.bundles` 加 `dsh-phicoding`（放在 `@deepseek-ai/dsh-web-app` 之后，与当年 `dsh-design-skills` 的位置一致） |
+
+**当场生效**（`patchReload: live`，无需重启）：本会话的技能目录随即多出 6 个 `phicoding*`，
+且 `phicoding-check` 的描述是「另含**十条红线**」——正是接口那次改后的新文案，证明 runtime 读的
+就是当前目录，不是缓存。
+
+改动前整个 profile 已备份到 `.backups/profile-web-pre-install-20261012-171814\`。
+
+**一处仍未对齐**：`pnpm-lock.yaml` 里没有 `dsh-phicoding` 这条 `link:` 记录（当年的
+`dsh-design-skills` 是有的）。这个文件被运行中的进程以「可读不可写」占用着，改不动。
+它只影响将来的 pnpm 操作，**不影响 runtime**。要在普通终端里把它补成官方形态，跑一次：
 
 ```powershell
 dsh plugin --profile web add H:\Git\dsh-mydsh\dsh-plugins\dsh-phicoding
 ```
 
-失败时 profile 的 `package.json` 未被改动（已确认），可以直接重试。装完新开一个会话，6 个技能才会出现在目录里。
 
 ## 七、git
 
