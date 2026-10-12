@@ -1,0 +1,13 @@
+{
+  "_说明": "每条锚点由谁守。值可以是 phicoding 规则 id，或保留字 Spec（C# 断言）/ probe（探针网）/ all-rules（全部通用规则）。",
+  "_来源": "PLAN.md 第 5 节的锚点表与它末尾的归属小结。",
+  "A1": "Spec", "A1b": "Spec", "A2": "Spec", "A2b": "Spec", "A3": "Spec",
+  "A4": "Spec", "A5": "Spec", "A6": "Spec", "A7a": "Spec", "A7b": "Spec", "A8": "Spec",
+  "A9a": "0900-no-level-up",
+  "A9b": "1000-no-data-name-in-core",
+  "A10": "1000-no-data-name-in-core",
+  "A11": "all-rules",
+  "A12": "probe",
+  "A13": "Spec", "A14": "Spec", "A14b": "Spec", "A15": "Spec", "A16": "Spec",
+  "A16b": "Spec", "A17": "Spec", "A18": "Spec", "A19": "Spec"
+}

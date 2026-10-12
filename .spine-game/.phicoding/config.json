@@ -1,0 +1,9 @@
+{
+  "_说明": "规则是通用的，项目形状不是。主干在哪、注释什么格式、作者是谁，由项目自己给，规则不许猜。",
+  "trunk": "Core/",
+  "variants": ["Data/"],
+  "trunkComments": "formatted",
+  "author": "Administrator",
+  "stringKeyOwner": "Sheet",
+  "plan": "PLAN.md"
+}

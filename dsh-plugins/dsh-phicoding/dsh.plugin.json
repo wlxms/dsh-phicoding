@@ -1,0 +1,11 @@
+{
+  "id": "local/dsh-phicoding",
+  "version": "0.1.0",
+  "main": "./lib/index.js",
+  "description": "PhiCoding skill family for DeepSeek Harness: resident coding and framework-design rules.",
+  "engines": { "dsh": ">=0.1.0-rc.6" },
+  "contributes": {
+    "tools": [],
+    "skills": ["phicoding", "phicoding-design", "phicoding-level", "phicoding-shape", "phicoding-unity", "phicoding-check"]
+  }
+}

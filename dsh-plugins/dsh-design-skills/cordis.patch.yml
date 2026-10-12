@@ -1,0 +1,8 @@
+# dsh-design-skills bundle patch: mount the design skill provider into the HOST
+# skill registry. Its row is host-plane, so every agent preset's scope chain
+# merges the skills it registers - that is what makes them resident.
+#
+# Applied over the dsh-base layer; later layers can still address this row by id.
+- insert:
+    - id: dsh-design-skills
+      name: 'dsh-design-skills'

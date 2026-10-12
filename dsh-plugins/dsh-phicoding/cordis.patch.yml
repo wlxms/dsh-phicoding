@@ -1,0 +1,6 @@
+# dsh-phicoding bundle patch: mount the phicoding skill provider into the HOST
+# skill registry. Its row is host-plane, so every agent preset's scope chain
+# merges these skills - that is what makes them resident.
+- insert:
+    - id: dsh-phicoding
+      name: 'dsh-phicoding'

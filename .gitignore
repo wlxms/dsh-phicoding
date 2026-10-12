@@ -1,0 +1,26 @@
+# ── 与本会话产物无关的独立检出（各自有自己的历史/是第三方拷贝）────────────
+/dsh-desktop-official/
+/dsh-desktop/
+/deepseek-harness/
+/dsh-upgrade-backup-*/
+/dsh-profile-state-backup-*/
+/dsh-update-and-start.lock/
+/.at-file-src/
+/.spike-hotupdate/
+/dsh-plugins/dsh-plugin-multi-root-workspace/
+/dsh-plugins/dsh-browser-extension/node_modules/
+
+# ── 构建产物 ────────────────────────────────────────────────────────────────
+**/node_modules/
+**/bin/
+**/obj/
+**/.build/
+**/dist/
+
+# ── 恢复工作区（含 21 MB 会话记录与重放暂存区）─────────────────────────────
+/.recovery-tmp/
+
+# ── 日志与临时文件 ──────────────────────────────────────────────────────────
+*.log
+*.tmp
+*.tmp.*

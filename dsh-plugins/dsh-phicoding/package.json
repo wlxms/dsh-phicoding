@@ -1,0 +1,16 @@
+{
+  "name": "dsh-phicoding",
+  "description": "PhiCoding for DeepSeek Harness: eight ranked core rules, five coding rules, and a framework design method built on minimal-complete and one-way information.",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "engines": { "dsh": ">=0.1.0-rc.6" },
+  "main": "lib/index.js",
+  "exports": { ".": "./lib/index.js", "./package.json": "./package.json" },
+  "files": ["lib", "skills", "dsh.plugin.json", "cordis.patch.yml", "README.md", "LICENSE"],
+  "license": "MIT",
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
+  "scripts": { "verify": "node scripts/verify-provider.mjs" },
+  "keywords": ["dsh", "dsh-plugin", "deepseek-harness", "plugin", "skills", "phicoding", "no-else", "types-over-enums"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

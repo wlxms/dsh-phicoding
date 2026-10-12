@@ -1,0 +1,11 @@
+{
+  "id": "local/dsh-design-skills",
+  "version": "0.1.0",
+  "main": "./lib/index.js",
+  "description": "Design skill family for DeepSeek Harness: resident skills for deciding how to cut when code must be written.",
+  "engines": { "dsh": ">=0.1.0-rc.6" },
+  "contributes": {
+    "tools": [],
+    "skills": ["design", "design-contract", "design-ladder", "design-audit", "design-debt", "design-gain", "design-help"]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "dsh-design-skills",
+  "description": "Design skills for DeepSeek Harness: a resident skill family that answers how to cut once ponytail has answered whether to write - trunk ignorance, admission rule, falsifiable seam measurement.",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "engines": { "dsh": ">=0.1.0-rc.6" },
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib", "skills", "dsh.plugin.json", "cordis.patch.yml", "README.md", "LICENSE"],
+  "license": "MIT",
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
+  "scripts": {
+    "verify": "node scripts/verify-provider.mjs",
+    "prepublishOnly": "node scripts/verify-provider.mjs"
+  },
+  "keywords": ["dsh", "dsh-plugin", "deepseek-harness", "plugin", "skills", "design", "abstraction", "trunk"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}
