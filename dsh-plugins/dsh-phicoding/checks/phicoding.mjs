@@ -189,9 +189,18 @@ async function copyTree(from, to) {
 // restoring afterwards looks equivalent and is not: a crash, a Ctrl-C or a
 // killed process leaves the injection behind, so the act of checking silently
 // modifies the project. The original tree stays read-only.
-async function runProbes(dll, allRules, levelsPath, toolsDir, sourceRoot) {
+async function runProbes(dll, allRules, levelsPath, toolsDir, sourceRoot, baseRed) {
   const results = []
   for (const rule of allRules) {
+    // The net had a precondition nobody wrote down: it compared against an
+    // absolute "nothing else is red". One rule the project already violates then
+    // reddens every other rule's probe, and the whole net reads FAIL for one
+    // unrelated reason. So the baseline is measured first, and a rule that is
+    // already red says so instead of pretending its probe proved anything.
+    if (baseRed.has(rule.id)) {
+      results.push({ id: rule.id, verdict: 'baseline-red' })
+      continue
+    }
     const spec = await probeSpec(rule)
     if (!spec) {
       results.push({ id: rule.id, verdict: 'no-probe' })
@@ -231,7 +240,7 @@ async function runProbes(dll, allRules, levelsPath, toolsDir, sourceRoot) {
       await writeFile(probeFacts, payload.text, 'utf8')
       const red = allRules.map((r) => runRule(r, probeFacts, levelsPath, toolsDir, copy)).filter((r) => !r.ok)
       const mine = red.filter((r) => r.id === rule.id)
-      const others = red.filter((r) => r.id !== rule.id)
+      const others = red.filter((r) => r.id !== rule.id && !baseRed.has(r.id))
       results.push({
         id: rule.id,
         verdict: mine.length === 1 && others.length === 0
@@ -316,14 +325,23 @@ for (const lang of active) {
   const chosen = only ? all.filter((r) => r.id.includes(only)) : all
 
   if (wantProbe) {
-    entry.probes = await runProbes(dll, all, levelsPath, lang.dir, root)
+    const baseRed = new Set(
+      all.map((r) => runRule(r, factsPath, levelsPath, lang.dir, root)).filter((r) => !r.ok).map((r) => r.id)
+    )
+    entry.probes = await runProbes(dll, all, levelsPath, lang.dir, root, baseRed)
     for (const p of entry.probes) {
-      const mark = p.verdict === 'ok' ? 'ok  ' : p.verdict === 'no-probe' ? 'GAP ' : 'FAIL'
-      console.log(`   ${mark} ${p.id}${p.detail ? '  ' + p.detail : ''}${p.verdict === 'ok' || p.verdict === 'no-probe' ? '' : '  ' + p.verdict}`)
-      if (p.verdict !== 'ok') report.failed++
+      const quiet = p.verdict === 'ok' || p.verdict === 'no-probe' || p.verdict === 'baseline-red'
+      const mark = p.verdict === 'ok' ? 'ok  ' : p.verdict === 'no-probe' ? 'GAP ' : p.verdict === 'baseline-red' ? 'BASE' : 'FAIL'
+      console.log(`   ${mark} ${p.id}${p.detail ? '  ' + p.detail : ''}${quiet ? '' : '  ' + p.verdict}`)
+      if (!quiet) report.failed++
     }
     const gaps = entry.probes.filter((p) => p.verdict === 'no-probe').length
     if (gaps > 0) console.log(`   探针覆盖缺口 ${gaps} 条 —— 没被反例验过的规则，等于没验过`)
+    const already = entry.probes.filter((p) => p.verdict === 'baseline-red')
+    if (already.length > 0) {
+      console.log(`   基线已红 ${already.length} 条：${already.map((p) => p.id).join(', ')}`)
+      console.log('   规则确实会红（项目自己证的），但探针证明不了它只红自己 —— 把项目修绿，这条网才算完整')
+    }
     await rm(dir, { recursive: true, force: true })
     report.languages.push(entry)
     continue
