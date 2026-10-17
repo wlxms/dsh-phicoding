@@ -24,13 +24,43 @@ const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8')
 
 const edges = new Map()
 const edgeAt = new Map()
-for (const type of facts.types) edges.set(type.name, new Set())
+const byName = new Map()
+for (const type of facts.types) {
+  edges.set(type.name, new Set())
+  if (!byName.has(type.name)) byName.set(type.name, type)
+}
+
 for (const ref of facts.references) {
+  // A type referencing itself is not a dependency: it says nothing about who may
+  // know whom, and a recursive structure is not a design defect. The base already
+  // drops self edges, but this rule must not depend on that - the invariant
+  // belongs where the graph is interpreted, not where the facts are collected.
+  if (ref.from === ref.to) continue
   edges.get(ref.from)?.add(ref.to)
   // Where the edge was written. A cycle is judged in scope when any of its edges
   // touches a changed line, so every edge location is carried into the finding.
   const key = `${ref.from}|${ref.to}`
   if (!edgeAt.has(key)) edgeAt.set(key, { file: ref.file, line: ref.line })
+}
+
+// A type and its own nested types are one design unit: the nested type cannot
+// exist without the outer one, so their mutual references describe no level
+// inversion - there is no third party whose information order changed. A cycle
+// confined to a single nesting tree is therefore not a cycle. A cycle that
+// leaves the tree (one more type joins) is still reported.
+const roots = new Map()
+function outerOf(name) {
+  if (roots.has(name)) return roots.get(name)
+  let current = name
+  const guard = new Set()
+  for (;;) {
+    const type = byName.get(current)
+    if (!type || !type.containing || guard.has(current)) break
+    guard.add(current)
+    current = type.containing
+  }
+  roots.set(name, current)
+  return current
 }
 
 const state = new Map()
@@ -42,6 +72,8 @@ function visit(name) {
   if (seen === 2) return
   if (seen === 1) {
     const names = stack.slice(stack.indexOf(name)).concat(name)
+    // Same nesting tree: the loop stays inside one unit, so it is not a cycle.
+    if (new Set(names.map(outerOf)).size === 1) return
     const text = names.join('  ->  ')
     if (!cycles.some((cycle) => cycle.text === text)) {
       const places = []
