@@ -139,6 +139,9 @@ function runRule(rule, factsPath, levelsPath, toolsDir, runRoot) {
     id: rule.id,
     file: rule.file,
     ok: result.status === 0,
+    // Exit 3 means "not applicable": an optional input is absent, so the rule judged
+    // nothing. It is neither a pass nor a failure, and it must not be printed as one.
+    skipped: result.status === 3,
     status: result.status,
     output: (result.stdout ?? '').trim(),
     error: (result.stderr ?? '').trim()
@@ -224,9 +227,16 @@ async function copyTree(from, to) {
 // restoring afterwards looks equivalent and is not: a crash, a Ctrl-C or a
 // killed process leaves the injection behind, so the act of checking silently
 // modifies the project. The original tree stays read-only.
-async function runProbes(dll, allRules, levelsPath, toolsDir, sourceRoot, baseRed) {
+async function runProbes(dll, allRules, levelsPath, toolsDir, sourceRoot, baseRed, baseSkip) {
   const results = []
   for (const rule of allRules) {
+    // A rule that does not apply here has no probe to prove either: it would exit 3
+    // in the copy as well, and calling that "stayed-green" would blame the rule for
+    // an absent optional input.
+    if (baseSkip.has(rule.id)) {
+      results.push({ id: rule.id, verdict: 'skipped' })
+      continue
+    }
     // The net had a precondition nobody wrote down: it compared against an
     // absolute "nothing else is red". One rule the project already violates then
     // reddens every other rule's probe, and the whole net reads FAIL for one
@@ -273,7 +283,7 @@ async function runProbes(dll, allRules, levelsPath, toolsDir, sourceRoot, baseRe
       // reported it as every rule reddening every other - which is exactly what
       // the net is for.
       await writeFile(probeFacts, payload.text, 'utf8')
-      const red = allRules.map((r) => runRule(r, probeFacts, levelsPath, toolsDir, copy)).filter((r) => !r.ok)
+      const red = allRules.map((r) => runRule(r, probeFacts, levelsPath, toolsDir, copy)).filter((r) => !r.ok && !r.skipped)
       const mine = red.filter((r) => r.id === rule.id)
       const others = red.filter((r) => r.id !== rule.id && !baseRed.has(r.id))
       results.push({
@@ -316,7 +326,7 @@ if (active.length === 0) {
   process.exit(2)
 }
 
-const report = { root, languages: [], failed: 0, soft: 0, grey: 0 }
+const report = { root, languages: [], failed: 0, soft: 0, grey: 0, skipped: 0 }
 
 // ---- findings and scope ----------------------------------------------------
 // A rule prints one finding per line. Every `path:line` inside the line is one of
@@ -331,6 +341,10 @@ function locationsIn(line) {
     found.push({ file: match[1].replaceAll('\\', '/'), line: Number(match[2]) })
   }
   return found
+}
+
+function firstLine(text) {
+  return (text ?? '').split('\n').find((line) => line.trim()) ?? ''
 }
 
 function classify(result, mine, other) {
@@ -437,13 +451,13 @@ for (const lang of active) {
   const chosen = only ? all.filter((r) => r.id.includes(only)) : all
 
   if (wantProbe) {
-    const baseRed = new Set(
-      all.map((r) => runRule(r, factsPath, levelsPath, lang.dir, root)).filter((r) => !r.ok).map((r) => r.id)
-    )
-    entry.probes = await runProbes(dll, all, levelsPath, lang.dir, root, baseRed)
+    const scanned = all.map((r) => runRule(r, factsPath, levelsPath, lang.dir, root))
+    const baseRed = new Set(scanned.filter((r) => !r.ok && !r.skipped).map((r) => r.id))
+    const baseSkip = new Set(scanned.filter((r) => r.skipped).map((r) => r.id))
+    entry.probes = await runProbes(dll, all, levelsPath, lang.dir, root, baseRed, baseSkip)
     for (const p of entry.probes) {
-      const quiet = p.verdict === 'ok' || p.verdict === 'no-probe' || p.verdict === 'baseline-red'
-      const mark = p.verdict === 'ok' ? 'ok  ' : p.verdict === 'no-probe' ? 'GAP ' : p.verdict === 'baseline-red' ? 'BASE' : 'FAIL'
+      const quiet = p.verdict === 'ok' || p.verdict === 'no-probe' || p.verdict === 'baseline-red' || p.verdict === 'skipped'
+      const mark = p.verdict === 'ok' ? 'ok  ' : p.verdict === 'no-probe' ? 'GAP ' : p.verdict === 'baseline-red' ? 'BASE' : p.verdict === 'skipped' ? 'skip' : 'FAIL'
       console.log(`   ${mark} ${p.id}${p.detail ? '  ' + p.detail : ''}${quiet ? '' : '  ' + p.verdict}`)
       if (!quiet) report.failed++
     }
@@ -469,6 +483,12 @@ for (const lang of active) {
       // a broken rule, it is evidence of a clean one.
       if (result.ok) {
         console.log(`   green ${result.id}`)
+        if (result.output) for (const line of result.output.split('\n')) console.log(`           ${line}`)
+        continue
+      }
+      if (result.skipped) {
+        console.log(`   skip  ${result.id}   ${firstLine(result.output)}`)
+        report.skipped++
         continue
       }
       const { red, grey, soft } = classify(result, mine, other)
@@ -497,6 +517,12 @@ for (const lang of active) {
 
     if (result.ok) {
       console.log(`   green ${result.id}`)
+      if (result.output) for (const line of result.output.split('\n')) console.log(`           ${line}`)
+    } else if (result.skipped) {
+      // Not applicable: an optional input is absent. Printing this as `green` would
+      // claim the rule looked and found nothing; it looked at nothing.
+      console.log(`   skip  ${result.id}   ${firstLine(result.output)}`)
+      report.skipped++
     } else {
       console.log(`   RED   ${result.id}`)
       if (result.output) for (const line of result.output.split('\n')) console.log(`           ${line}`)
@@ -522,6 +548,9 @@ for (const lang of active) {
 
 if (wantJson) console.log(JSON.stringify(report, null, 2))
 console.log('')
+// A skipped rule judged nothing. It must never be folded into a plain OK, or the
+// summary would claim coverage the run did not have.
+const tail = report.skipped > 0 ? `  跳过 ${report.skipped} 条（可选输入缺失，不算通过）` : ''
 if (wantDiff) {
   // A scoped pass and a strict pass mean different things. Printing the same line
   // for both would turn "nothing changed" into "compliant" - the exact silent
@@ -529,10 +558,10 @@ if (wantDiff) {
   console.log(`scope  ${scopeInfo.session} · 模式 ${scopeInfo.mode} · 改动 ${scopeInfo.changed} 文件 · 归我 ${scopeInfo.mine} · 归灰 ${scopeInfo.other}`)
   console.log(
     report.failed === 0
-      ? `PHICODING=OK  (scope)  红 0 · 灰 ${report.grey} · 软 ${report.soft}`
-      : `PHICODING=FAILED  ${report.failed} 项（scope）`
+      ? `PHICODING=OK  (scope)  红 0 · 灰 ${report.grey} · 软 ${report.soft}${tail}`
+      : `PHICODING=FAILED  ${report.failed} 项（scope）${tail}`
   )
 } else {
-  console.log(report.failed === 0 ? 'PHICODING=OK' : `PHICODING=FAILED  ${report.failed} 项`)
+  console.log(report.failed === 0 ? `PHICODING=OK${tail}` : `PHICODING=FAILED  ${report.failed} 项${tail}`)
 }
 process.exit(report.failed === 0 ? 0 : 1)

@@ -22,12 +22,15 @@ if (args.includes('--probe-spec')) {
 
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
 
+// Levels are an OPTIONAL input: a design note the philosophy judge may keep, not a
+// list every project must maintain. So a missing file is "not applicable" (exit 3),
+// never a failure - and completeness is reported, not enforced.
 let levels
 try {
   levels = JSON.parse(readFileSync(args[args.indexOf('--levels') + 1], 'utf8'))
 } catch {
-  console.log('读不到 levels.json。等级无从判定——这是失败，不是通过。')
-  process.exit(1)
+  console.log('没有 levels.json —— 等级是可选输入，跳过，不算通过。')
+  process.exit(3)
 }
 
 // 嵌套类型不单独登记：它活在外部类型的声明体里，看不见外部看不见的东西。
@@ -50,17 +53,20 @@ for (const [name, where] of owners) {
   }
 }
 
-// UNLISTED carries the declaration's location: "this type has no level" is a fact
-// about one declaration, so it can be scoped to a changed line. GHOST has no
-// location at all - the entry names a type that does not exist anywhere - so it
-// stays unscopable and therefore blocking.
-for (const name of declared) {
-  if (listed.has(name)) continue
-  const type = owners.get(name)?.[0]
-  const at = type ? `${type.file}:${type.line}` : ''
-  problems.push(`${at}  UNLISTED  ${name}   源码里有，没登记等级`)
-}
+// GHOST: the map names a type that no longer exists. That is drift in an opt-in
+// file, and drift misleads the judge - cheap to fix, so it stays a finding.
+// There is deliberately no UNLISTED direction: "every type must have a level" is
+// exactly the completeness demand that would make levels.json a formal dependency.
 for (const name of listed) if (!declared.has(name)) problems.push(`GHOST     ${name}   登记里有，源码里没有`)
 
 for (const problem of problems) console.log(problem)
+
+if (problems.length === 0) {
+  // Coverage is printed, not enforced. A partial map is legitimate - the types it
+  // skips simply do not take part in level judgement - but it must be visible, or a
+  // map that quietly stops covering things looks exactly like a clean run.
+  const covered = [...declared].filter((name) => listed.has(name)).length
+  console.log(`覆盖 ${covered}/${declared.size} 个类型（未覆盖的类型不参与等级判定）`)
+}
+
 process.exit(problems.length === 0 ? 0 : 1)

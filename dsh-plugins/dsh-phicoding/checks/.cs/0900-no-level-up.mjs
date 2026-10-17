@@ -26,12 +26,17 @@ if (args.includes('--probe-spec')) {
 
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
 
+// Levels are an OPTIONAL input: a design note the philosophy judge may keep. The
+// checker must never demand it - requiring a complete level map is what turns a
+// design artifact into a build gate. Exit 3 means "not applicable", which the CLI
+// reports as a skip. A skip is not a pass: it says this rule did not judge
+// anything, and the summary says so.
 let levels
 try {
   levels = JSON.parse(readFileSync(args[args.indexOf('--levels') + 1], 'utf8'))
 } catch {
-  console.log('读不到 levels.json。等级无从判定——这是失败，不是通过。')
-  process.exit(1)
+  console.log('没有 levels.json —— 等级是可选输入，跳过，不算通过。')
+  process.exit(3)
 }
 
 // 嵌套类型取它外层类型的等级 —— 它在同一个声明体里。

@@ -127,7 +127,13 @@ console.log(`fixture: ${fixture}\n`)
   )
 
   const r = run({ root: dir, args: ['--diff'], env })
-  expect('新文件 → 整文件入范围，0700 与 0850 都红', r.status === 1 && /RED\s+0700/.test(r.out) && /RED\s+0850/.test(r.out), r.out.slice(-700))
+  // 0700 红（新抽象没有接口）；0850 不红——等级是可选的设计笔记，新类型没登记
+  // 等级不算违规，只让覆盖率往下走。这条断言就是这条契约的探针。
+  expect(
+    '新文件 → 整文件入范围，0700 红但 0850 不红（等级是可选的）',
+    r.status === 1 && /RED\s+0700/.test(r.out) && !/RED\s+0850/.test(r.out),
+    r.out.slice(-700),
+  )
   await rm(dir, { recursive: true, force: true })
 }
 
