@@ -23,8 +23,15 @@ if (args.includes('--probe-spec')) {
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
 
 const edges = new Map()
+const edgeAt = new Map()
 for (const type of facts.types) edges.set(type.name, new Set())
-for (const ref of facts.references) edges.get(ref.from)?.add(ref.to)
+for (const ref of facts.references) {
+  edges.get(ref.from)?.add(ref.to)
+  // Where the edge was written. A cycle is judged in scope when any of its edges
+  // touches a changed line, so every edge location is carried into the finding.
+  const key = `${ref.from}|${ref.to}`
+  if (!edgeAt.has(key)) edgeAt.set(key, { file: ref.file, line: ref.line })
+}
 
 const state = new Map()
 const stack = []
@@ -34,8 +41,16 @@ function visit(name) {
   const seen = state.get(name) ?? 0
   if (seen === 2) return
   if (seen === 1) {
-    const cycle = stack.slice(stack.indexOf(name)).concat(name).join('  ->  ')
-    if (!cycles.includes(cycle)) cycles.push(cycle)
+    const names = stack.slice(stack.indexOf(name)).concat(name)
+    const text = names.join('  ->  ')
+    if (!cycles.some((cycle) => cycle.text === text)) {
+      const places = []
+      for (let i = 0; i < names.length - 1; i++) {
+        const at = edgeAt.get(`${names[i]}|${names[i + 1]}`)
+        if (at) places.push(`${at.file}:${at.line}`)
+      }
+      cycles.push({ text, places })
+    }
     return
   }
   state.set(name, 1)
@@ -47,5 +62,8 @@ function visit(name) {
 
 for (const name of edges.keys()) visit(name)
 
-for (const cycle of cycles) console.log(cycle)
+for (const cycle of cycles) {
+  const rest = cycle.places.slice(1).join('  ')
+  console.log(`${cycle.places[0] ?? ''}  CYCLE  ${cycle.text}${rest ? `   [${rest}]` : ''}`)
+}
 process.exit(cycles.length === 0 ? 0 : 1)

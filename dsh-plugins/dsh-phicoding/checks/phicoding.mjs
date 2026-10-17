@@ -24,6 +24,7 @@ import { copyFile, mkdir, mkdtemp, readdir, readFile, writeFile, rm } from 'node
 import { tmpdir } from 'node:os'
 import { dirname, extname, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import * as scope from './scope.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const SKIP = new Set(['bin', 'obj', 'node_modules', '.git', '.build'])
@@ -45,6 +46,40 @@ const wantProbe = flag('--probe')
 // what the comment format is, who the author is - all of that belongs to the
 // project, so a rule reads it from here rather than hard-coding it.
 const configPath = value('--config') ?? join(root, '.phicoding', 'config.json')
+
+// ---- session scope ---------------------------------------------------------
+// An established project already violates most of these rules, and a checker that
+// reports all of it at once is ignored. So the session can narrow what counts:
+// only what this session touched is enforced, everything else is measured but not
+// blocking. See scope.mjs for why the comparison alone cannot attribute a change.
+const wantBegin = flag('--session-begin')
+const wantDiff = flag('--diff')
+const sessionId = value('--session') ?? process.env.DSH_SESSION_ID
+
+if (wantDiff && wantProbe) {
+  // A probe has to run the rule over the whole project to prove it reddens only
+  // itself. Narrowing the scope first would turn that proof into a tautology.
+  console.error('phicoding: --diff 与 --probe 不能同时用。探针要跑整个项目才能证明每条规则只红自己。')
+  process.exit(2)
+}
+
+if (wantBegin) {
+  if (!sessionId) {
+    console.error('phicoding: --session-begin 需要会话标识。用 --session <id> 指定，或设置 DSH_SESSION_ID。')
+    process.exit(2)
+  }
+  if (existsSync(scope.manifestPath(root, sessionId)) && !flag('--force')) {
+    // Recapturing moves the baseline, and the move is invisible afterwards: every
+    // change made before the second capture would silently stop counting.
+    console.error(`phicoding: 本会话已经有基准了（${sessionId}）。重拍会把基准挪到此刻，之前改的东西会被当成没改。加 --force 才能覆盖。`)
+    process.exit(2)
+  }
+  const manifest = await scope.capture({ root, session: sessionId })
+  console.log(`基准已拍：${sessionId}`)
+  console.log(`  文件 ${manifest.files} 个 / ${manifest.bytes} 字节   内容模式 ${manifest.mode}（存了 ${manifest.contents} 个文件的内容）`)
+  console.log(`  ${scope.manifestPath(root, sessionId)}`)
+  process.exit(0)
+}
 
 // ---- language directories --------------------------------------------------
 // A directory whose name starts with "." is a language, and its name is the
@@ -281,7 +316,84 @@ if (active.length === 0) {
   process.exit(2)
 }
 
-const report = { root, languages: [], failed: 0 }
+const report = { root, languages: [], failed: 0, soft: 0, grey: 0 }
+
+// ---- findings and scope ----------------------------------------------------
+// A rule prints one finding per line. Every `path:line` inside the line is one of
+// the finding's locations; the first is the primary one. A finding with no
+// location cannot be scoped, and an unscopable failure is always blocking -
+// "I could not read my config" must never soften into "not mine".
+const LOCATION = /([A-Za-z0-9_.\-\\/]+\.[A-Za-z0-9]+):(\d+)/g
+
+function locationsIn(line) {
+  const found = []
+  for (const match of line.matchAll(LOCATION)) {
+    found.push({ file: match[1].replaceAll('\\', '/'), line: Number(match[2]) })
+  }
+  return found
+}
+
+function classify(result, mine, other) {
+  const red = []
+  const grey = []
+  const soft = []
+  for (const line of (result.output ?? '').split('\n')) {
+    if (!line.trim()) continue
+    const places = locationsIn(line)
+    if (places.length === 0) {
+      red.push(line)
+      continue
+    }
+    const mineHit = places.some((place) => scope.inScope(mine, place.file, place.line))
+    if (mineHit) {
+      red.push(line)
+      continue
+    }
+    // Changed during the session but not claimed by this session's ledger: very
+    // likely another agent working in the same directory, or a change made through
+    // a shell. It is reported, but it is not this session's to block on.
+    const otherHit = places.some((place) => scope.inScope(other, place.file, place.line))
+    ;(otherHit ? grey : soft).push(line)
+  }
+  return { red, grey, soft }
+}
+
+let mine
+let other
+let scopeInfo
+if (wantDiff) {
+  if (!sessionId) {
+    console.error('phicoding: --diff 需要会话标识。用 --session <id> 指定，或设置 DSH_SESSION_ID。')
+    process.exit(2)
+  }
+  const snapshot = await scope.loadCapture(root, sessionId)
+  if (!snapshot) {
+    // Not "everything changed", and not "nothing changed": there is no baseline,
+    // so there is nothing honest to compare against.
+    console.error(`phicoding: 本会话没有基准（${sessionId}）。先跑 --session-begin。`)
+    process.exit(2)
+  }
+  const comparison = await scope.compare(root, snapshot)
+  const ledger = scope.loadLedger(root, sessionId)
+  const attributed = scope.attribute(comparison.changed, ledger)
+  mine = attributed.mine
+  other = attributed.other
+  scopeInfo = {
+    session: sessionId,
+    mode: snapshot.mode,
+    changed: comparison.changed.size,
+    mine: attributed.mine.size,
+    other: attributed.other.size,
+    added: comparison.added.length,
+    removed: comparison.removed.length,
+    skipped: comparison.skipped,
+    ledger: ledger !== undefined,
+  }
+  const mode = scopeInfo.ledger ? '账内归我 / 账外归灰' : '无动作账，改动全部归我'
+  console.log(`== scope  ${sessionId}  模式 ${snapshot.mode} · ${mode}`)
+  console.log(`   改动 ${scopeInfo.changed} 文件（新增 ${scopeInfo.added}）· 跳过 ${scopeInfo.skipped} 文件未变`)
+  console.log('')
+}
 
 for (const lang of active) {
   const entry = { ext: lang.ext, files: lang.count, rules: [], probes: [] }
@@ -350,6 +462,39 @@ for (const lang of active) {
   for (const rule of chosen) {
     const result = runRule(rule, factsPath, levelsPath, lang.dir, root)
     entry.rules.push(result)
+
+    if (wantDiff) {
+      // A green rule found nothing anywhere, which is also nothing in scope. It
+      // must be reported before classification: an empty output is not evidence of
+      // a broken rule, it is evidence of a clean one.
+      if (result.ok) {
+        console.log(`   green ${result.id}`)
+        continue
+      }
+      const { red, grey, soft } = classify(result, mine, other)
+      // A rule that exited non-zero without producing a scoped finding did not
+      // "find nothing in my scope" - it failed. That is blocking either way.
+      const broke = red.length === 0 && grey.length === 0 && soft.length === 0
+      if (red.length > 0 || broke) {
+        console.log(`   RED   ${result.id}   ${broke ? '（没有产出任何可定位的 finding）' : red.length + ' 处'}`)
+        for (const line of red) console.log(`           ${line}`)
+        report.failed++
+      } else if (grey.length > 0) {
+        console.log(`   grey  ${result.id}   ${grey.length} 处（改过但不在本会话的账里，未挡）`)
+        for (const line of grey) console.log(`           ${line}`)
+        report.grey += grey.length
+      } else {
+        console.log(`   soft  ${result.id}   ${soft.length} 处（改动范围外，未挡）`)
+        report.soft += soft.length
+      }
+      if (result.error) {
+        const brief = result.error.split('\n')
+        for (const line of brief.slice(0, 8)) console.log(`           ! ${line}`)
+        if (brief.length > 8) console.log('           ! …')
+      }
+      continue
+    }
+
     if (result.ok) {
       console.log(`   green ${result.id}`)
     } else {
@@ -377,5 +522,17 @@ for (const lang of active) {
 
 if (wantJson) console.log(JSON.stringify(report, null, 2))
 console.log('')
-console.log(report.failed === 0 ? 'PHICODING=OK' : `PHICODING=FAILED  ${report.failed} 项`)
+if (wantDiff) {
+  // A scoped pass and a strict pass mean different things. Printing the same line
+  // for both would turn "nothing changed" into "compliant" - the exact silent
+  // downgrade this checker exists to refuse.
+  console.log(`scope  ${scopeInfo.session} · 模式 ${scopeInfo.mode} · 改动 ${scopeInfo.changed} 文件 · 归我 ${scopeInfo.mine} · 归灰 ${scopeInfo.other}`)
+  console.log(
+    report.failed === 0
+      ? `PHICODING=OK  (scope)  红 0 · 灰 ${report.grey} · 软 ${report.soft}`
+      : `PHICODING=FAILED  ${report.failed} 项（scope）`
+  )
+} else {
+  console.log(report.failed === 0 ? 'PHICODING=OK' : `PHICODING=FAILED  ${report.failed} 项`)
+}
 process.exit(report.failed === 0 ? 0 : 1)

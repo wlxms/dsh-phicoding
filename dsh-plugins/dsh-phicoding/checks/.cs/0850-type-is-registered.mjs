@@ -41,13 +41,25 @@ const owners = new Map()
 for (const type of facts.types) {
   if (type.containing) continue
   if (!owners.has(type.name)) owners.set(type.name, [])
-  owners.get(type.name).push(type.file)
+  owners.get(type.name).push(type)
 }
 for (const [name, where] of owners) {
-  if (where.length > 1) problems.push(`AMBIGUOUS  ${name}   在 ${where.join(' 与 ')} 各声明一次`)
+  if (where.length > 1) {
+    const places = where.map((type) => `${type.file}:${type.line}`).join('  ')
+    problems.push(`${places}  AMBIGUOUS  ${name}   在 ${where.map((type) => type.file).join(' 与 ')} 各声明一次`)
+  }
 }
 
-for (const name of declared) if (!listed.has(name)) problems.push(`UNLISTED  ${name}   源码里有，没登记等级`)
+// UNLISTED carries the declaration's location: "this type has no level" is a fact
+// about one declaration, so it can be scoped to a changed line. GHOST has no
+// location at all - the entry names a type that does not exist anywhere - so it
+// stays unscopable and therefore blocking.
+for (const name of declared) {
+  if (listed.has(name)) continue
+  const type = owners.get(name)?.[0]
+  const at = type ? `${type.file}:${type.line}` : ''
+  problems.push(`${at}  UNLISTED  ${name}   源码里有，没登记等级`)
+}
 for (const name of listed) if (!declared.has(name)) problems.push(`GHOST     ${name}   登记里有，源码里没有`)
 
 for (const problem of problems) console.log(problem)
