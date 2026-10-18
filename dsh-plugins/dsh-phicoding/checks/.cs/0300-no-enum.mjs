@@ -7,7 +7,7 @@ export const probe = {
   file: 'Core/Slot.cs',
   kind: 'replace',
   find: '    public string Name { get; } = name;',
-  with: '    public string Name { get; } = name;\n\n    public enum Probe { A, B }'
+  with: '    public string Name { get; } = name;\n\n    public enum EProbe { A, B }'
 }
 
 import { readFileSync } from 'node:fs'

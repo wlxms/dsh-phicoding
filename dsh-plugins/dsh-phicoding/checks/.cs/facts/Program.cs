@@ -108,12 +108,22 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
                     _ => null
                 };
                 if (memberName is null) continue;
+                // An extension method is identified by the `this` modifier on its first
+                // parameter — that is a structural fact, unlike its name. A rule about
+                // extension class names must not look at the name to decide what the
+                // class is; that would make the rule prove itself.
+                var extensionOf = member is MethodDeclarationSyntax extensionMethod
+                    && extensionMethod.ParameterList.Parameters.Count > 0
+                    && extensionMethod.ParameterList.Parameters[0].Modifiers.Any(SyntaxKind.ThisKeyword)
+                        ? extensionMethod.ParameterList.Parameters[0].Type?.ToString()
+                        : null;
                 members.Add(new
                 {
                     name = memberName,
                     kind = member.Kind().ToString().Replace("Declaration", "").ToLowerInvariant(),
                     type = memberType,
                     isStatic = member.Modifiers.Any(SyntaxKind.StaticKeyword),
+                    extensionOf,
                     line = tree.GetLineSpan(member.Span).StartLinePosition.Line + 1,
                     // A member's span is what an exemption comment inside it applies to.
                     endLine = tree.GetLineSpan(member.Span).EndLinePosition.Line + 1,
