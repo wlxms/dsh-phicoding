@@ -1,25 +1,35 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  把 phicoding 一键装进全局 Copilot（个人技能 + 检查器）。
+  把 phicoding 装进全局 Copilot；再跑一次就是更新。
 
 .DESCRIPTION
-  从 GitHub 拉取源码，现场构建 Copilot 套件，然后把
+  从 GitHub 拉取源码，现场构建，然后装到你的账户下：
     - 6 个技能  →  ~/.copilot/skills/<name>/SKILL.md   （VS Code 个人 Agent Skills）
     - 检查器    →  ~/.copilot/phicoding/               （Node + Roslyn 语法底座）
-  装到你自己的账户下，对所有仓库生效，不碰任何项目目录。
+
+  同一个脚本既是安装也是更新：它会比对内容指纹，没变化就什么都不做，有变化就整份替换。
+  记录写在 <目标>/.installed.json。
 
 .EXAMPLE
   irm https://raw.githubusercontent.com/wlxms/dsh-phicoding/main/install-copilot.ps1 | iex
 
 .EXAMPLE
   .\install-copilot.ps1 -Shared      # 同时装到 ~/.agents/skills（跨 Agent 开放标准位置）
+
+.EXAMPLE
+  .\install-copilot.ps1 -Force       # 指纹相同也重装一遍
+
+.EXAMPLE
+  .\install-copilot.ps1 -Uninstall   # 卸载（不需要网络）
 #>
 [CmdletBinding()]
 param(
     [string]$Ref = 'main',
     [string]$Destination = '',
-    [switch]$Shared
+    [switch]$Shared,
+    [switch]$Uninstall,
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,11 +41,28 @@ function Write-Note($message) { Write-Host "  $message" -ForegroundColor DarkGra
 if (-not $Destination) {
     $Destination = if ($env:COPILOT_HOME) { $env:COPILOT_HOME } else { Join-Path $env:USERPROFILE '.copilot' }
 }
+$manifestPath = Join-Path $Destination '.installed.json'
+$checker = Join-Path $Destination 'phicoding'
+$skills = Join-Path $Destination 'skills'
+$sharedSkills = Join-Path $env:USERPROFILE '.agents\skills'
+
+# ---- 卸载：不联网，只删自己装过的东西 --------------------------------------
+if ($Uninstall) {
+    foreach ($dir in @($skills, $sharedSkills)) {
+        if (-not (Test-Path $dir)) { continue }
+        Get-ChildItem $dir -Directory | Where-Object { $_.Name -like 'phicoding*' } | ForEach-Object {
+            Remove-Item $_.FullName -Recurse -Force
+            Write-Note "删除 $($_.FullName)"
+        }
+    }
+    if (Test-Path $checker) { Remove-Item $checker -Recurse -Force; Write-Note "删除 $checker" }
+    if (Test-Path $manifestPath) { Remove-Item $manifestPath -Force; Write-Note "删除 $manifestPath" }
+    Write-Host '已卸载。' -ForegroundColor Green
+    return
+}
 
 $node = Get-Command node -ErrorAction SilentlyContinue
-if (-not $node) {
-    throw '没找到 node。本套件需要 Node.js >= 18：https://nodejs.org/'
-}
+if (-not $node) { throw '没找到 node。本套件需要 Node.js >= 18：https://nodejs.org/' }
 
 $archive = "https://codeload.github.com/wlxms/dsh-phicoding/zip/refs/heads/$Ref"
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ("phicoding-install-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -59,19 +86,34 @@ try {
     & node $builder $kit
     if ($LASTEXITCODE -ne 0) { throw "构建失败（exit $LASTEXITCODE）" }
 
+    # ---- 比对指纹：这一步决定了它是"安装"还是"更新"，或者什么都不用做 ----
+    $incoming = Get-Content (Join-Path $kit 'VERSION.json') -Raw | ConvertFrom-Json
+    $installed = if (Test-Path $manifestPath) { Get-Content $manifestPath -Raw | ConvertFrom-Json } else { $null }
+    $intact = Test-Path (Join-Path $checker 'checks\phicoding.mjs')
+
+    if ($installed -and $installed.hash -eq $incoming.hash -and $intact -and -not $Force) {
+        Write-Host ''
+        Write-Host "已是最新（$($incoming.hash.Substring(0, 12))，$($incoming.files) 个文件），没有改动。" -ForegroundColor Green
+        Write-Host "要强制重装：.\install-copilot.ps1 -Force"
+        return
+    }
+
+    if ($installed -and $installed.hash -ne $incoming.hash) {
+        Write-Host "▸ 更新 $($installed.hash.Substring(0, 12)) → $($incoming.hash.Substring(0, 12))"
+    }
+
     Write-Step "安装到 $Destination"
-    $skills = Join-Path $Destination 'skills'
     New-Item -ItemType Directory -Path $skills -Force | Out-Null
     Copy-Item -Path (Join-Path $kit '.github\skills\*') -Destination $skills -Recurse -Force
     Write-Note "技能 → $skills"
 
-    $checker = Join-Path $Destination 'phicoding'
     if (Test-Path $checker) { Remove-Item $checker -Recurse -Force }
     Copy-Item -Path (Join-Path $kit 'phicoding') -Destination $checker -Recurse -Force
     Write-Note "检查器 → $checker"
 
     # 技能正文里写的是抽象的 `phicoding --root <项目>`；这台机器上真正的路径要说清楚，
     # 否则 Copilot 会去 PATH 里找一个不存在的命令。
+    # 每次安装都是先用源文件覆盖、再追加，所以反复更新不会堆出多行。
     $runner = Join-Path $checker 'checks\phicoding.mjs'
     $note = "`n> **本机安装位置**：检查器在 ``$runner``。运行：``node `"$runner`" --root <项目>``。`n"
     foreach ($name in @('phicoding', 'phicoding-check')) {
@@ -80,14 +122,23 @@ try {
     }
 
     if ($Shared) {
-        $shared = Join-Path $env:USERPROFILE '.agents\skills'
-        New-Item -ItemType Directory -Path $shared -Force | Out-Null
-        Copy-Item -Path (Join-Path $kit '.github\skills\*') -Destination $shared -Recurse -Force
-        Write-Note "技能 → $shared（跨 Agent 开放标准位置）"
+        New-Item -ItemType Directory -Path $sharedSkills -Force | Out-Null
+        Copy-Item -Path (Join-Path $kit '.github\skills\*') -Destination $sharedSkills -Recurse -Force
+        Write-Note "技能 → $sharedSkills（跨 Agent 开放标准位置）"
     }
 
+    [ordered]@{
+        name           = 'phicoding-copilot'
+        hash           = $incoming.hash
+        packageVersion = $incoming.packageVersion
+        ref            = $Ref
+        skills         = $incoming.skills
+        installedAt    = (Get-Date).ToUniversalTime().ToString('o')
+        destination    = $Destination
+    } | ConvertTo-Json -Depth 4 | Set-Content $manifestPath -Encoding utf8
+
     Write-Host ''
-    Write-Host '装好了。' -ForegroundColor Green
+    Write-Host "装好了（$($incoming.hash.Substring(0, 12))）。" -ForegroundColor Green
     Write-Host ''
     Write-Host '  在 VS Code 的 Copilot Chat 里：'
     Write-Host '    - 直接说「按 phicoding 设计这个功能」，它会自动加载对应技能'
@@ -95,6 +146,9 @@ try {
     Write-Host ''
     Write-Host '  跑检查器：'
     Write-Host "    node `"$runner`" --root <你的项目>"
+    Write-Host ''
+    Write-Host '  更新：再跑一次本脚本即可（内容没变就什么都不做）'
+    Write-Host '  卸载：.\install-copilot.ps1 -Uninstall'
     Write-Host ''
     Write-Host '  还需要：.NET SDK >= 8（检查器首次运行会用 Roslyn 编译语法底座，约 3 秒）'
     Write-Host '  项目侧配置：在目标仓库建 .phicoding/config.json，写明 trunk / variants / author'

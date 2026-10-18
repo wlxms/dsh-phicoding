@@ -16,6 +16,7 @@
 //
 // 静态那几份放在 scripts/copilot-kit/，本脚本只负责把它们与技能、检查器装配到一起。
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -69,5 +70,33 @@ for (const name of skillNames) await installSkill(name, join(out, '.github', 'sk
 await copyTree(join(pkg, 'checks'), join(out, 'phicoding', 'checks'))
 await copyTree(templates, out)
 
+// 内容指纹：安装脚本用它在"再跑一次"时判断装的东西有没有变。
+// 不用版本号——package.json 的 version 很少动，而套件会因为改一个规则就变。
+const digest = createHash('sha256')
+const files = []
+async function walk(dir) {
+  for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) await walk(path)
+    else files.push(path)
+  }
+}
+await walk(out)
+for (const file of files) {
+  digest.update(file.slice(out.length + 1).replace(/\\/g, '/'))
+  digest.update('\0')
+  digest.update(await readFile(file))
+  digest.update('\0')
+}
+const version = {
+  name: 'phicoding-copilot',
+  packageVersion: JSON.parse(await readFile(join(pkg, 'package.json'), 'utf8')).version,
+  hash: digest.digest('hex'),
+  files: files.length,
+  skills: skillNames
+}
+await writeFile(join(out, 'VERSION.json'), JSON.stringify(version, null, 2) + '\n', 'utf8')
+
 console.log(`已生成：${out}`)
 console.log(`  技能 ${skillNames.length} 个：${skillNames.join(' / ')}`)
+console.log(`  指纹 ${version.hash.slice(0, 16)}…（${version.files} 个文件）`)

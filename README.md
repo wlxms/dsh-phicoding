@@ -29,6 +29,16 @@ curl -fsSL https://raw.githubusercontent.com/wlxms/dsh-phicoding/main/install-co
 脚本会从 GitHub 拉源码、现场构建，然后装到 `~/.copilot/skills/`（技能）与 `~/.copilot/phicoding/`（检查器）。
 `-Shared` / `--shared` 会同时装到 `~/.agents/skills/`（跨 Agent 的标准位置）。
 
+**同一个脚本就是更新器**：再跑一次即可。它比对内容指纹，没变化就什么都不做，有变化就整份替换并打印新旧指纹。
+
+```powershell
+.\install-copilot.ps1              # 更新（内容没变则提示"已是最新"）
+.\install-copilot.ps1 -Force       # 指纹相同也重装
+.\install-copilot.ps1 -Uninstall   # 卸载（不需要网络）
+```
+
+`~/.copilot/.installed.json` 记录了装的是哪个指纹、什么时候装的。
+
 装完之后在 Copilot Chat 里说「按 phicoding 设计这个功能」它会自动加载对应技能，也可以敲 `/phicoding`、
 `/phicoding-check`。检查器：
 
