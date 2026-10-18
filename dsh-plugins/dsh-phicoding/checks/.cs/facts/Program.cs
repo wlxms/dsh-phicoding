@@ -114,6 +114,17 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
                     kind = member.Kind().ToString().Replace("Declaration", "").ToLowerInvariant(),
                     type = memberType,
                     isStatic = member.Modifiers.Any(SyntaxKind.StaticKeyword),
+                    // "Is this state that can change?" needs the keyword, not a guess:
+                    // a static method is behaviour, a const or a getter-only property
+                    // is a fixed value, and only the rest is global mutable state.
+                    isConst = member is BaseFieldDeclarationSyntax constant && constant.Modifiers.Any(SyntaxKind.ConstKeyword),
+                    isReadOnly = member switch
+                    {
+                        BaseFieldDeclarationSyntax field => field.Modifiers.Any(SyntaxKind.ReadOnlyKeyword),
+                        PropertyDeclarationSyntax property => property.AccessorList is null
+                            || !property.AccessorList.Accessors.Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration)),
+                        _ => false
+                    },
                     line = tree.GetLineSpan(member.Span).StartLinePosition.Line + 1
                 });
             }

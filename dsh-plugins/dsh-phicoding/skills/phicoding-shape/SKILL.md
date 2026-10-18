@@ -52,6 +52,11 @@ public static void Clear()
 
 ## 单例
 
+> **下面的形态都是静态的，但它们合法——前提是这些类型被项目声明为账本。**
+> `0600-no-static-state` 禁的是**可变的**静态状态，不是 `static` 这个关键字；
+> 而账本是例外，缝开在 `.phicoding/config.json` 的 `staticStateOwners` 里，
+> 由项目点名。没点名的静态可变状态照报。
+
 ```csharp
 public static class Singleton
 {
