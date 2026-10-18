@@ -11,12 +11,38 @@
 | **软性** | 6 个技能，常驻（每个会话都在） | [`dsh-plugins/dsh-phicoding/skills/`](dsh-plugins/dsh-phicoding/skills) |
 | **硬性** | 一条命令跑 13 条规则，不通过就不通过 | [`dsh-plugins/dsh-phicoding/checks/`](dsh-plugins/dsh-phicoding/checks) |
 
-## 快速开始
+## 装进 VS Code Copilot（全局，一条命令）
+
+phicoding 的 6 个技能就是 **Agent Skills**（`SKILL.md` + frontmatter，开放标准），所以能直接装进 Copilot。
+装到**你自己账户下**，对所有仓库生效，不碰任何项目目录。
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/wlxms/dsh-phicoding/main/install-copilot.ps1 | iex
+```
+
+```sh
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/wlxms/dsh-phicoding/main/install-copilot.sh | sh
+```
+
+脚本会从 GitHub 拉源码、现场构建，然后装到 `~/.copilot/skills/`（技能）与 `~/.copilot/phicoding/`（检查器）。
+`-Shared` / `--shared` 会同时装到 `~/.agents/skills/`（跨 Agent 的标准位置）。
+
+装完之后在 Copilot Chat 里说「按 phicoding 设计这个功能」它会自动加载对应技能，也可以敲 `/phicoding`、
+`/phicoding-check`。检查器：
+
+```powershell
+node "$env:USERPROFILE\.copilot\phicoding\checks\phicoding.mjs" --root <你的项目>
+```
+
+**依赖**：Node.js ≥ 18、.NET SDK ≥ 8（首次运行编译语法底座，约 3 秒）。
+
+## 快速开始（仓库内）
 
 ```powershell
 # 结构检查（10 条语言级 + 项目自己的 3 条）
 node dsh-plugins/dsh-phicoding/checks/phicoding.mjs --root .spine-game
-
 
 # 列出规则（从目录扫，不手写清单）
 node dsh-plugins/dsh-phicoding/checks/phicoding.mjs --list
