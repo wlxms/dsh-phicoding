@@ -55,6 +55,16 @@ if (config.trunk === undefined || config.trunk === null) {
 const byName = new Map()
 for (const type of facts.types) if (!byName.has(type.name)) byName.set(type.name, type)
 
+// 这条规则按名字查类型。两个同名类型（不同命名空间）会让它认错人，而认错之后
+// 报的是"这里违规"或"这里没事"——两种都可能是假的。判不了就不判，并且说出来。
+const seen = new Map()
+for (const type of facts.types) seen.set(type.name, (seen.get(type.name) ?? 0) + 1)
+const duplicated = [...seen].filter(([, count]) => count > 1).map(([name]) => name)
+if (duplicated.length > 0) {
+  console.log(`有同名类型（${duplicated.join(', ')}）—— 按名字查会串，先消除同名，跳过，不算通过。`)
+  process.exit(3)
+}
+
 function bare(name) {
   if (!name) return null
   let text = String(name).trim()

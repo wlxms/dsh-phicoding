@@ -124,11 +124,11 @@ async function rulesOf(langDir, extraDir) {
 // be wrong imposed on every other project.
 const localRules = join(root, '.phicoding', 'rules')
 
-function runRule(rule, factsPath, levelsPath, toolsDir, runRoot) {
+function runRule(rule, factsPath, toolsDir, runRoot) {
   const ext = extname(rule.path).toLowerCase()
   // --rules points at the language's rule directory, so a project rule can check
   // that the rule it names actually exists instead of trusting a hand-kept list.
-  const common = ['--facts', factsPath, '--levels', levelsPath, '--config', configPath, '--rules', toolsDir, '--root', runRoot]
+  const common = ['--facts', factsPath, '--config', configPath, '--rules', toolsDir, '--root', runRoot]
   const launched = ext === '.mjs' || ext === '.js'
     ? ['node', [rule.path, ...common]]
     : ext === '.sh'
@@ -227,7 +227,7 @@ async function copyTree(from, to) {
 // restoring afterwards looks equivalent and is not: a crash, a Ctrl-C or a
 // killed process leaves the injection behind, so the act of checking silently
 // modifies the project. The original tree stays read-only.
-async function runProbes(dll, allRules, levelsPath, toolsDir, sourceRoot, baseRed, baseSkip) {
+async function runProbes(dll, allRules, toolsDir, sourceRoot, baseRed, baseSkip) {
   const results = []
   for (const rule of allRules) {
     // A rule that does not apply here has no probe to prove either: it would exit 3
@@ -283,7 +283,7 @@ async function runProbes(dll, allRules, levelsPath, toolsDir, sourceRoot, baseRe
       // reported it as every rule reddening every other - which is exactly what
       // the net is for.
       await writeFile(probeFacts, payload.text, 'utf8')
-      const red = allRules.map((r) => runRule(r, probeFacts, levelsPath, toolsDir, copy)).filter((r) => !r.ok && !r.skipped)
+      const red = allRules.map((r) => runRule(r, probeFacts, toolsDir, copy)).filter((r) => !r.ok && !r.skipped)
       const mine = red.filter((r) => r.id === rule.id)
       const others = red.filter((r) => r.id !== rule.id && !baseRed.has(r.id))
       results.push({
@@ -426,11 +426,6 @@ for (const lang of active) {
 
   const dir = await mkdtemp(join(tmpdir(), 'phicoding-'))
   const factsPath = join(dir, 'facts.json')
-  // Levels are a project's own design declaration, not the checker's data: two
-  // projects with the same code have different level maps. So it lives with the
-  // project, and --levels exists for when the root is a subdirectory of it.
-  const levelsPath = value('--levels') ?? join(root, 'levels.json')
-
   let facts
   try {
     const payload = runBase(dll, root, factsPath)
@@ -451,10 +446,10 @@ for (const lang of active) {
   const chosen = only ? all.filter((r) => r.id.includes(only)) : all
 
   if (wantProbe) {
-    const scanned = all.map((r) => runRule(r, factsPath, levelsPath, lang.dir, root))
+    const scanned = all.map((r) => runRule(r, factsPath, lang.dir, root))
     const baseRed = new Set(scanned.filter((r) => !r.ok && !r.skipped).map((r) => r.id))
     const baseSkip = new Set(scanned.filter((r) => r.skipped).map((r) => r.id))
-    entry.probes = await runProbes(dll, all, levelsPath, lang.dir, root, baseRed, baseSkip)
+    entry.probes = await runProbes(dll, all, lang.dir, root, baseRed, baseSkip)
     for (const p of entry.probes) {
       const quiet = p.verdict === 'ok' || p.verdict === 'no-probe' || p.verdict === 'baseline-red' || p.verdict === 'skipped'
       const mark = p.verdict === 'ok' ? 'ok  ' : p.verdict === 'no-probe' ? 'GAP ' : p.verdict === 'baseline-red' ? 'BASE' : p.verdict === 'skipped' ? 'skip' : 'FAIL'
@@ -474,7 +469,7 @@ for (const lang of active) {
   }
 
   for (const rule of chosen) {
-    const result = runRule(rule, factsPath, levelsPath, lang.dir, root)
+    const result = runRule(rule, factsPath, lang.dir, root)
     entry.rules.push(result)
 
     if (wantDiff) {

@@ -88,6 +88,7 @@ spine-game-classes.png          抽象方案类图
 
 ## 已知的不完整
 
-- `.spine-equip` 尚未迁移到 `phicoding`（无 `.phicoding/` 与 `levels.json`），它仍用旧的 PowerShell 检查器
+- `.spine-equip` 尚未迁移到 `phicoding`（没有 `.phicoding/config.json`），它仍用旧的 PowerShell 检查器
 - 规则 `0700-abstract-has-interface` 在两个载体上都是红的（两者都写于该根之前，`.cs` 里零接口）
 - 「接口有没有覆盖抽象的**完整**抽象面」机器判不了，归软审查
+- 两个彼此无关、也没有继承关系的类型之间，那条依赖该不该有 —— 只取决于设计意图，检查器不判，归哲学法官

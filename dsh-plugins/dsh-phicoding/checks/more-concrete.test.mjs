@@ -110,6 +110,29 @@ public sealed class Forge
     },
     red: 1,
   },
+  {
+    name: '同名类型 → 跳过而不是猜（按名字查会串）',
+    trunk: '.',
+    layout: {
+      'A.cs': `namespace A;
+
+public interface IRoot { }
+public class ConcRoot : IRoot { }
+
+public sealed class User
+{
+    public IRoot Any { get; set; } = null!;
+    public ConcRoot Made { get; set; } = null!;
+}
+`,
+      'B.cs': `namespace B;
+
+public interface IRoot { }
+public class ConcRoot { }
+`,
+    },
+    skip: true,
+  },
 ]
 
 const results = []
@@ -138,13 +161,18 @@ for (const item of cases) {
   const out = `${result.stdout ?? ''}${result.stderr ?? ''}`
   await rm(dir, { recursive: true, force: true })
 
-  const red = (out.match(/^\s{3}RED\s+0750/m) ? 1 : 0)
-  const hitLines = out.split('\n').filter((line) => /引用了.*又引用了/.test(line)).length
-  const ok = red === item.red && hitLines === item.red
+  let ok
+  if (item.skip) {
+    ok = result.status === 0 && /skip\s+0750/.test(out) && /同名类型/.test(out)
+  } else {
+    const red = out.match(/^\s{3}RED\s+0750/m) ? 1 : 0
+    const hitLines = out.split('\n').filter((line) => /引用了.*又引用了/.test(line)).length
+    ok = red === item.red && hitLines === item.red
+  }
   results.push({ name: item.name, ok })
   console.log(`${ok ? '  ok   ' : '  FAIL '} ${item.name}`)
   if (!ok) {
-    console.log(`         期望 ${item.red} 处，实际 RED=${red} 命中行=${hitLines}`)
+    console.log(`         期望 ${item.skip ? '跳过' : item.red + ' 处'}`)
     console.log(out.split('\n').slice(-8).map((line) => `         ${line}`).join('\n'))
   }
 }
