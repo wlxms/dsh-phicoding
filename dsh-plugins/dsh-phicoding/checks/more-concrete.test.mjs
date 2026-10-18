@@ -142,7 +142,7 @@ for (const item of cases) {
   await mkdir(join(dir, '.phicoding'), { recursive: true })
   await writeFile(
     join(dir, '.phicoding', 'config.json'),
-    JSON.stringify({ trunk: item.trunk ?? '.', variants: [], trunkComments: 'formatted', author: 'x', stringKeyOwner: '', plan: '' }),
+    JSON.stringify({ trunk: item.trunk ?? '.', variants: [], trunkComments: 'formatted', author: 'x', plan: '' }),
   )
   if (item.layout) {
     for (const [path, text] of Object.entries(item.layout)) {

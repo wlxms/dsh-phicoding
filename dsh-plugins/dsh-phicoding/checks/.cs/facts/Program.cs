@@ -114,7 +114,13 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
                     kind = member.Kind().ToString().Replace("Declaration", "").ToLowerInvariant(),
                     type = memberType,
                     isStatic = member.Modifiers.Any(SyntaxKind.StaticKeyword),
-                    line = tree.GetLineSpan(member.Span).StartLinePosition.Line + 1
+                    line = tree.GetLineSpan(member.Span).StartLinePosition.Line + 1,
+                    // A member's span is what an exemption comment inside it applies to.
+                    endLine = tree.GetLineSpan(member.Span).EndLinePosition.Line + 1,
+                    // Leading trivia (the comments written directly above the member) is
+                    // outside Span but belongs to it. Without this line, a comment
+                    // explaining an exemption never covers the member it explains.
+                    firstLine = tree.GetLineSpan(member.FullSpan).StartLinePosition.Line + 1
                 });
             }
         }
@@ -139,6 +145,7 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
         var switchLines = new List<int>();
         var strings = new List<object>();
         var comments = new List<object>();
+        var dispatches = new List<object>();
 
         foreach (var n in decl.DescendantNodes())
         {
@@ -149,9 +156,65 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
                     break;
                 case SwitchStatementSyntax statement:
                     switchLines.Add(tree.GetLineSpan(statement.Span).StartLinePosition.Line + 1);
+                    // A string literal in case position is a name doing a type's job.
+                    foreach (var label in statement.Sections.SelectMany(section => section.Labels))
+                    {
+                        if (label is CaseSwitchLabelSyntax label1
+                            && label1.Value is LiteralExpressionSyntax caseLiteral
+                            && caseLiteral.IsKind(SyntaxKind.StringLiteralExpression))
+                        {
+                            dispatches.Add(new
+                            {
+                                kind = "switch",
+                                literal = caseLiteral.Token.ValueText,
+                                line = tree.GetLineSpan(caseLiteral.Span).StartLinePosition.Line + 1
+                            });
+                        }
+                    }
                     break;
                 case SwitchExpressionSyntax expression:
                     switchLines.Add(tree.GetLineSpan(expression.Span).StartLinePosition.Line + 1);
+                    foreach (var arm in expression.Arms)
+                    {
+                        if (arm.Pattern is ConstantPatternSyntax armPattern
+                            && armPattern.Expression is LiteralExpressionSyntax armLiteral
+                            && armLiteral.IsKind(SyntaxKind.StringLiteralExpression))
+                        {
+                            dispatches.Add(new
+                            {
+                                kind = "switch",
+                                literal = armLiteral.Token.ValueText,
+                                line = tree.GetLineSpan(armLiteral.Span).StartLinePosition.Line + 1
+                            });
+                        }
+                    }
+                    break;
+                case BinaryExpressionSyntax comparison
+                    when comparison.IsKind(SyntaxKind.EqualsExpression) || comparison.IsKind(SyntaxKind.NotEqualsExpression):
+                    // x == "name" / "name" != x. The literal is the name; the other side
+                    // is whatever we are branching on.
+                    foreach (var side in new[] { comparison.Left, comparison.Right })
+                    {
+                        if (side is not LiteralExpressionSyntax compareLiteral) continue;
+                        if (!compareLiteral.IsKind(SyntaxKind.StringLiteralExpression)) continue;
+                        dispatches.Add(new
+                        {
+                            kind = "compare",
+                            literal = compareLiteral.Token.ValueText,
+                            line = tree.GetLineSpan(compareLiteral.Span).StartLinePosition.Line + 1
+                        });
+                    }
+                    break;
+                case IsPatternExpressionSyntax pattern
+                    when pattern.Pattern is ConstantPatternSyntax constant
+                        && constant.Expression is LiteralExpressionSyntax patternLiteral
+                        && patternLiteral.IsKind(SyntaxKind.StringLiteralExpression):
+                    dispatches.Add(new
+                    {
+                        kind = "compare",
+                        literal = patternLiteral.Token.ValueText,
+                        line = tree.GetLineSpan(patternLiteral.Span).StartLinePosition.Line + 1
+                    });
                     break;
                 case LiteralExpressionSyntax literal when literal.IsKind(SyntaxKind.StringLiteralExpression):
                     strings.Add(new { value = literal.Token.ValueText, line = tree.GetLineSpan(literal.Span).StartLinePosition.Line + 1 });
@@ -201,6 +264,7 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
             elseLines,
             switchLines,
             strings,
+            dispatches,
             comments
         });
     }
