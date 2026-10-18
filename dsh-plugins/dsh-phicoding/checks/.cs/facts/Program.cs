@@ -311,67 +311,54 @@ static IEnumerable<TypeSyntax> ReferenceNamesIn(SyntaxNode scope)
     }
 }
 
-// TypeSyntax covers plain names, generic names and qualified names. For
-// `Spine.Data.Forge` the type is the rightmost segment; the namespace on the
-// left is not a type and must not be reported as one.
-// 注释的语法：// pc: key=value ...   值是裸词，或带转义的双引号串。
-    // 只解析，不判断——"哪些字段是必须的"归规则，底座不替它拿主意。
+    // 注释的语法：// [作者 日期 key=value ...] 原因
+    //
+    // 方括号里按空格切：前两项固定是作者与日期，其余只能是 key=value。
+    // 方括号外整段是原因——随便写，不需要引号也不需要转义，因为它不再是
+    // "某个字段的值"。这是刻意的：可解析的那部分进括号，人话留在外面。
+    //
+    // 只解析，不判断——"哪些字段是必须的、日期什么形状"归规则，底座不替它拿主意。
     static (string? error, Dictionary<string, string> fields) ParseComment(string raw)
     {
         var fields = new Dictionary<string, string>();
         var body = raw.Trim();
         if (body.StartsWith("/*", StringComparison.Ordinal) && body.EndsWith("*/", StringComparison.Ordinal))
             body = body.Substring(2, body.Length - 4).Trim();
-        else
-            body = body.TrimStart('/', ' ', '\t');
+        else if (body.StartsWith("//", StringComparison.Ordinal))
+            body = body.Substring(2).Trim();
 
-        if (!body.StartsWith("pc:", StringComparison.Ordinal))
-            return ("注释必须以 pc: 开头（// pc: author=… date=… note=\"…\"）", fields);
+        if (!body.StartsWith("[", StringComparison.Ordinal))
+            return ("注释必须以 [作者 日期] 开头", fields);
 
-        var rest = body.Substring(3);
-        var i = 0;
-        while (i < rest.Length)
+        var close = body.IndexOf(']');
+        if (close < 0) return ("方括号没有闭合", fields);
+
+        var head = body.Substring(1, close - 1);
+        var reason = body.Substring(close + 1).Trim();
+
+        var tokens = head.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length < 2) return ("方括号里至少要「作者 日期」两项", fields);
+
+        fields["author"] = tokens[0];
+        fields["date"] = tokens[1];
+        if (reason.Length > 0) fields["reason"] = reason;
+
+        for (var i = 2; i < tokens.Length; i++)
         {
-            while (i < rest.Length && char.IsWhiteSpace(rest[i])) i++;
-            if (i >= rest.Length) break;
-
-            var keyStart = i;
-            while (i < rest.Length && (char.IsLetterOrDigit(rest[i]) || rest[i] == '_')) i++;
-            var key = rest.Substring(keyStart, i - keyStart);
-            if (key.Length == 0) return ("出现空字段名", fields);
-            if (i >= rest.Length || rest[i] != '=') return ($"字段 {key} 缺少 =", fields);
-            i++;
-
-            string value;
-            if (i < rest.Length && rest[i] == '"')
-            {
-                i++;
-                var sb = new StringBuilder();
-                var closed = false;
-                while (i < rest.Length)
-                {
-                    if (rest[i] == '\\' && i + 1 < rest.Length) { sb.Append(rest[i + 1]); i += 2; continue; }
-                    if (rest[i] == '"') { i++; closed = true; break; }
-                    sb.Append(rest[i]);
-                    i++;
-                }
-                if (!closed) return ($"字段 {key} 的引号没有闭合", fields);
-                value = sb.ToString();
-            }
-            else
-            {
-                var start = i;
-                while (i < rest.Length && !char.IsWhiteSpace(rest[i])) i++;
-                value = rest.Substring(start, i - start);
-            }
-
-            if (fields.ContainsKey(key)) return ($"字段 {key} 重复", fields);
-            fields[key] = value;
+            var token = tokens[i];
+            var separator = token.IndexOf('=');
+            if (separator <= 0) return ($"方括号里的「{token}」不是 key=value", fields);
+            var key = token.Substring(0, separator);
+            if (fields.ContainsKey(key)) return ($"{key} 重复", fields);
+            fields[key] = token.Substring(separator + 1);
         }
 
         return (null, fields);
     }
 
+    // TypeSyntax covers plain names, generic names and qualified names. For
+    // `Spine.Data.Forge` the type is the rightmost segment; the namespace on the
+    // left is not a type and must not be reported as one.
     static string? RightmostName(TypeSyntax syntax) => syntax switch
 {
     IdentifierNameSyntax identifier => identifier.Identifier.ValueText,

@@ -14,7 +14,7 @@
 // 有些场合逃不掉：反序列化要读线格式里的 "type" 字段，数据层的字段名也是字符串。
 // 所以默认禁用，**用结构化注释显式豁免**，而且豁免必须说明属于哪一类：
 //
-//   // pc: author=wlxms date=2026-10-18 waive=0650 why=serialization note="线格式里的 type 字段"
+//   // [wlxms 2026-10-18 waive=0650 why=serialization] 线格式里的 type 字段，反序列化必须读
 //
 // why 只有三类（见 0500）：data / serialization / plumbing。注释本身的格式由 0500 判，
 // 这条规则只读 waive 与 why 两个字段——**一套格式，两处规则共用**。

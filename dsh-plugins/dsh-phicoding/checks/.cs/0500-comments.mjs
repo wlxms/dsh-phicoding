@@ -3,21 +3,24 @@
 //
 // 格式（一条注释一行）：
 //
-//   // pc: author=<用户名> date=<YYYY-MM-DD> note="<为什么>" [waive=<规则id,...> why=<类别>]
+//   // [<作者> <日期> <key=value> ...] <原因>
 //
-// 为什么不是"作者 - 日期 : 内容"：那种写法靠位置分隔，作者名里有空格、内容里有
-// 冒号就崩，而且规则只能靠正则硬猜。键值对没有这种歧义——字段由底座解析好，
-// 规则读字段，一条注释可以同时承载追溯信息与豁免声明，不必各发明一套写法。
+// 方括号里按空格切：前两项固定是作者与日期，其余只能是 key=value。
+// 方括号外整段是原因，**随便写**——不需要引号，也不需要转义，因为它不再是
+// "某个字段的值"。可解析的那部分进括号，人话留在外面。
+//
+//   // [wlxms 2026-10-18] 这里硬编码了 Atlas 类型，因为打包期才能确定落盘摘要
+//   // [wlxms 2026-10-18 waive=0650 why=serialization] 线格式里的 type 字段，反序列化必须读
 //
 // 字段
-//   author  必填，必须等于项目作者
-//   date    必填，YYYY-MM-DD
-//   note    可选（与 waive 至少有一个）：为什么写这条注释
-//   waive   可选：逗号分隔的规则 id，声明这些规则对这条注释所在成员不生效
-//   why     有 waive 时必填：豁免属于哪一类 —— data / serialization / plumbing
+//   author  必填（第一项）：必须等于项目作者
+//   date    必填（第二项）：YYYY-MM-DD
+//   reason  必填（方括号之后）：为什么写这条注释
+//   waive   按需：逗号分隔的规则 id，对这条注释所在的成员不生效
+//   why     有 waive 时必填：data / serialization / plumbing
 //
-// why 只有三类，说不清是哪一类就不是可豁免的情况。字段表是封闭的：不认识的键
-// 报错，否则拼错的键会静默失效，而那条注释看起来完全合规。
+// 字段表是封闭的：不认识的键报错，否则拼错的键会静默失效，而那条注释看起来
+// 完全合规。
 export const probe = {
   file: 'Core/Slot.cs',
   kind: 'replace',
@@ -44,7 +47,7 @@ try {
   process.exit(3)
 }
 
-const FIELDS = new Set(['author', 'date', 'note', 'waive', 'why'])
+const FIELDS = new Set(['author', 'date', 'reason', 'waive', 'why'])
 const WHY = new Set(['data', 'serialization', 'plumbing'])
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const mode = config.trunkComments ?? 'formatted'
@@ -67,19 +70,19 @@ for (const type of facts.types) {
     const fields = comment.fields ?? {}
     const unknown = Object.keys(fields).filter((key) => !FIELDS.has(key))
     if (unknown.length > 0) {
-      hits.push(`${at}  不认识的字段 ${unknown.join(', ')}（只有 author / date / note / waive / why）`)
+      hits.push(`${at}  不认识的字段 ${unknown.join(', ')}（只有 waive / why）`)
       continue
     }
 
-    if (!fields.author) hits.push(`${at}  缺 author`)
+    if (!fields.author) hits.push(`${at}  缺作者`)
     else if (config.author && fields.author !== config.author) {
-      hits.push(`${at}  author 是 ${fields.author}，项目作者是 ${config.author}`)
+      hits.push(`${at}  作者是 ${fields.author}，项目作者是 ${config.author}`)
     }
 
-    if (!fields.date) hits.push(`${at}  缺 date`)
-    else if (!DATE.test(fields.date)) hits.push(`${at}  date 要 YYYY-MM-DD，现在是 ${fields.date}`)
+    if (!fields.date) hits.push(`${at}  缺日期`)
+    else if (!DATE.test(fields.date)) hits.push(`${at}  日期要 YYYY-MM-DD，现在是 ${fields.date}`)
 
-    if (!fields.note && !fields.waive) hits.push(`${at}  缺 note（这条注释没说要说明什么）`)
+    if (!fields.reason) hits.push(`${at}  方括号后面缺原因（这条注释要说明什么）`)
 
     if (fields.waive) {
       const ids = fields.waive.split(',').map((one) => one.trim()).filter(Boolean)

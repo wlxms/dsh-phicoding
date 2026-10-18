@@ -67,7 +67,7 @@ description: 可判定的自审清单。哲学法官的两个关口——审规�
 | 有 `switch` | `switch` | 编5 |
 | 抽象层有枚举 | `enum`（单个方法内的简单分支除外） | 设4 |
 | 主干里的实现类型 | 主干源码里出现具体实现的类型名或实现字段 | 设2 |
-| 有注释 | 除 `// pc:` 追溯记录外的注释 | 编1 |
+| 有注释 | 除 `// [作者 日期] 原因` 追溯记录外的注释 | 编1 |
 | 填充词命名 | `Manager` `Service` `Helper` `Util` `Impl` | 核4 |
 | 互相引用 | **整张依赖图无环**——不是逐对比对，主干内部同样适用。**两处豁免：自引用；以及一个类型与它自身嵌套类型之间的互指**（同一设计单元，不牵进第三方） | 核6 |
 | **名字分派进主干** | **A** 主干（工厂除外）出现变体名的字面量分派。按用法判：名字在 `==` / `if` / `switch` 里 → 违规；在 `Add("...", new Xxx())` 里 → 允许 | 设2 |
@@ -192,8 +192,8 @@ $declares[$file] = $type;       // 检查器：循环里赋值，只有最后一
 | `0200-no-switch` | 主干里没有 `switch` | 抽成多态：一种情况一个类型 |
 | `0300-no-enum` | 主干里没有 `enum` | 枚举换成抽象类型 + 子类（见 `phicoding-shape` 的按类型索引定理） |
 | `0400-no-filler` | 命名里没有 Manager / Service / Helper / Util / Impl | 用职责本身命名；**说不清职责 = 职责没切开** |
-| `0500-comments` | 注释只许是结构化追溯记录（全项目，不只主干）：`// pc:` 开头、字段表封闭、作者与项目一致、日期 `YYYY-MM-DD` | 要么删掉；要么写成 `// pc: author=… date=… note="…"`。豁免用 `waive=<规则id> why=<data/serialization/plumbing>` |
-| `0650-no-string-dispatch` | 主干里不按字符串字面量分派（`switch` 的 case / `==` `!=` / `is "字面量"`）。**字符串当键不算**——`Dictionary<string, Item>` 里的 string 可能是 itemId | 把种类升成 CLR 类型，让它变成 `switch` 的类型分派。逃不掉的场合（反序列化、线格式字段名）在成员内写 `// pc: author=… date=… waive=0650 why=serialization note="理由"`，`why` 只能是 `data` / `serialization` / `plumbing` |
+| `0500-comments` | 注释只许是结构化追溯记录（全项目，不只主干）：`// [作者 日期 …] 原因`。括号里按空格切，字段表封闭，作者与项目一致，日期 `YYYY-MM-DD`，括号后必须有原因 | 要么删掉；要么写成 `// [wlxms 2026-10-18] 原因`。豁免写进括号：`waive=<规则id> why=<data/serialization/plumbing>` |
+| `0650-no-string-dispatch` | 主干里不按字符串字面量分派（`switch` 的 case / `==` `!=` / `is "字面量"`）。**字符串当键不算**——`Dictionary<string, Item>` 里的 string 可能是 itemId | 把种类升成 CLR 类型，让它变成 `switch` 的类型分派。逃不掉的场合（反序列化、线格式字段名）在成员内写 `// [作者 日期 waive=0650 why=serialization] 理由`，`why` 只能是 `data` / `serialization` / `plumbing` |
 | `0700-abstract-has-interface` | 每个抽象至少实现一个接口 | 给这个抽象抽一个能力接口让它实现。**不是删掉抽象**——接口是最小公开面，抽象配接口是常态 |
 | `0750-no-more-concrete` | 引用的具体度不越档 | 把那个更具体的引用换回 B 挡位上的类型：接口档换接口、抽象档换抽象。**不是删掉 B 的引用** |
 | `0800-no-cycle` | 依赖无环（自引用、以及类型与其自身嵌套类型之间的互指不算） | 见 `phicoding-level` 的四步决策树 |

@@ -54,7 +54,7 @@ const cases = [
     source: `
 public sealed class D
 {
-    // pc: author=Administrator date=2026-10-18 waive=0650 why=serialization note="线格式里的 type 字段"
+    // [Administrator 2026-10-18 waive=0650 why=serialization] 线格式里的 type 字段，反序列化必须读
     public bool A(string wire) => wire == "type1";
 }`,
     red: 0,
@@ -65,7 +65,7 @@ public sealed class D
     source: `
 public sealed class D
 {
-    // pc: author=Administrator date=2026-10-18 waive=0650 why=plumbing note="只管下一个成员"
+    // [Administrator 2026-10-18 waive=0650 why=plumbing] 只管下一个成员
     public bool A(string k) => k == "type1";
 
     public bool B(string k) => k == "type2";
