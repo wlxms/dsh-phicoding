@@ -50,33 +50,22 @@ const cases = [
     red: 0,
   },
   {
-    name: '豁免·序列化 → 放过，且摘要把豁免数说清楚',
+    name: 'waive=0650 → 放过，且摘要把豁免数说清楚',
     source: `
 public sealed class D
 {
-    // Administrator - 2026-10-18 : 豁免·序列化 —— 线格式里的 type 字段
+    // pc: author=Administrator date=2026-10-18 waive=0650 why=serialization note="线格式里的 type 字段"
     public bool A(string wire) => wire == "type1";
 }`,
     red: 0,
-    expect: /豁免 1 处（数据层 0 \/ 序列化 1 \/ 工程 0）/,
-  },
-  {
-    name: '写了豁免但没说类别 → 违规（不是豁免）',
-    source: `
-public sealed class D
-{
-    // Administrator - 2026-10-18 : 豁免 —— 忘了写类别
-    public bool A(string k) => k == "type1";
-}`,
-    red: 1,
-    expect: /豁免没说是哪一类/,
+    expect: /豁免 1 处（serialization 1）/,
   },
   {
     name: '豁免只管它所在的成员，不串到旁边 → 旁边那个仍违规',
     source: `
 public sealed class D
 {
-    // Administrator - 2026-10-18 : 豁免·工程 —— 只管下一个成员
+    // pc: author=Administrator date=2026-10-18 waive=0650 why=plumbing note="只管下一个成员"
     public bool A(string k) => k == "type1";
 
     public bool B(string k) => k == "type2";

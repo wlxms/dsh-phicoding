@@ -12,11 +12,12 @@
 // 而且它恰好是"名字进了主干"最直接的形状。
 //
 // 有些场合逃不掉：反序列化要读线格式里的 "type" 字段，数据层的字段名也是字符串。
-// 所以默认禁用，**用注释显式豁免**，而且豁免必须说明属于哪一类：
+// 所以默认禁用，**用结构化注释显式豁免**，而且豁免必须说明属于哪一类：
 //
-//   // 作者 - 日期 : 豁免·序列化 —— JsonElement 的 type 是线格式，不是类型名
+//   // pc: author=wlxms date=2026-10-18 waive=0650 why=serialization note="线格式里的 type 字段"
 //
-// 三类：数据层 / 序列化 / 工程。说不清是哪一类，就不是可豁免的情况。
+// why 只有三类（见 0500）：data / serialization / plumbing。注释本身的格式由 0500 判，
+// 这条规则只读 waive 与 why 两个字段——**一套格式，两处规则共用**。
 export const probe = {
   file: 'Core/Slot.cs',
   kind: 'replace',
@@ -55,8 +56,8 @@ const trunk = String(config.trunk)
 const inTrunk = (file) => trunk === '' || String(file).split('\\').join('/').startsWith(trunk)
 
 // 豁免必须点名类别，否则它只是一句"我觉得可以"。
-const CATEGORY = /豁免\s*[·:：]\s*(数据层|序列化|工程)/
-const MENTIONS = /豁免/
+// 格式的合法性由 0500 判；这条规则只读 waive / why 两个字段。
+const waives = (comment) => String(comment.fields?.waive ?? '').split(',').map((one) => one.trim())
 
 function enclosing(members, line) {
   let best
@@ -76,8 +77,7 @@ function withinMember(member, line) {
 }
 
 const shown = []
-const excused = { 数据层: 0, 序列化: 0, 工程: 0 }
-const bad = []
+const excused = {}
 
 for (const type of facts.types) {
   if (!inTrunk(type.file)) continue
@@ -90,14 +90,10 @@ for (const type of facts.types) {
       member === undefined ? comment.line === dispatch.line : withinMember(member, comment.line)
     const nearby = (type.comments ?? []).filter(inScope)
 
-    const granted = nearby.find((comment) => CATEGORY.test(comment.text))
+    const granted = nearby.find((comment) => waives(comment).includes('0650'))
     if (granted) {
-      excused[CATEGORY.exec(granted.text)[1]] += 1
-      continue
-    }
-    // 写了"豁免"却没说类别 —— 这不是豁免，是没想清楚。
-    if (nearby.some((comment) => MENTIONS.test(comment.text))) {
-      bad.push(`${type.file}:${dispatch.line}  豁免没说是哪一类（要 豁免·数据层 / 序列化 / 工程）：${dispatch.literal}`)
+      const why = granted.fields?.why ?? 'unknown'
+      excused[why] = (excused[why] ?? 0) + 1
       continue
     }
     shown.push(`${type.file}:${dispatch.line}  ${type.name} 按字面量 "${dispatch.literal}" 分派（${dispatch.kind}）`)
@@ -105,12 +101,12 @@ for (const type of facts.types) {
 }
 
 for (const hit of shown) console.log(hit)
-for (const hit of bad) console.log(hit)
 
-const total = excused.数据层 + excused.序列化 + excused.工程
-if (shown.length === 0 && bad.length === 0 && total > 0) {
+const total = Object.values(excused).reduce((sum, one) => sum + one, 0)
+if (shown.length === 0 && total > 0) {
   // 豁免本身是事实，要说出来。否则"没人违规"和"全被豁免了"长得一模一样。
-  console.log(`豁免 ${total} 处（数据层 ${excused.数据层} / 序列化 ${excused.序列化} / 工程 ${excused.工程}）`)
+  const detail = Object.entries(excused).map(([why, n]) => `${why} ${n}`).join(' / ')
+  console.log(`豁免 ${total} 处（${detail}）`)
 }
 
-process.exit(shown.length === 0 && bad.length === 0 ? 0 : 1)
+process.exit(shown.length === 0 ? 0 : 1)

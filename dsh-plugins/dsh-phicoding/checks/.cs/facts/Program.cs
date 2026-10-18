@@ -227,10 +227,19 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
 
         foreach (var trivia in decl.DescendantTrivia())
         {
-            if (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) || trivia.IsKind(SyntaxKind.MultiLineCommentTrivia))
+            if (!trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) && !trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)) continue;
+            var text = trivia.ToString();
+            // Comments are structured, not prose: every one parses into fields or
+            // reports why it cannot. Rules then read fields instead of re-inventing
+            // a regex per rule - and a malformed comment can never pass for a valid one.
+            var parsed = ParseComment(text);
+            comments.Add(new
             {
-                comments.Add(new { text = trivia.ToString(), line = tree.GetLineSpan(trivia.Span).StartLinePosition.Line + 1 });
-            }
+                text,
+                line = tree.GetLineSpan(trivia.Span).StartLinePosition.Line + 1,
+                error = parsed.error,
+                fields = parsed.fields
+            });
         }
 
         // A name is a reference when it sits in a type position. The syntax tree
@@ -305,7 +314,65 @@ static IEnumerable<TypeSyntax> ReferenceNamesIn(SyntaxNode scope)
 // TypeSyntax covers plain names, generic names and qualified names. For
 // `Spine.Data.Forge` the type is the rightmost segment; the namespace on the
 // left is not a type and must not be reported as one.
-static string? RightmostName(TypeSyntax syntax) => syntax switch
+// 注释的语法：// pc: key=value ...   值是裸词，或带转义的双引号串。
+    // 只解析，不判断——"哪些字段是必须的"归规则，底座不替它拿主意。
+    static (string? error, Dictionary<string, string> fields) ParseComment(string raw)
+    {
+        var fields = new Dictionary<string, string>();
+        var body = raw.Trim();
+        if (body.StartsWith("/*", StringComparison.Ordinal) && body.EndsWith("*/", StringComparison.Ordinal))
+            body = body.Substring(2, body.Length - 4).Trim();
+        else
+            body = body.TrimStart('/', ' ', '\t');
+
+        if (!body.StartsWith("pc:", StringComparison.Ordinal))
+            return ("注释必须以 pc: 开头（// pc: author=… date=… note=\"…\"）", fields);
+
+        var rest = body.Substring(3);
+        var i = 0;
+        while (i < rest.Length)
+        {
+            while (i < rest.Length && char.IsWhiteSpace(rest[i])) i++;
+            if (i >= rest.Length) break;
+
+            var keyStart = i;
+            while (i < rest.Length && (char.IsLetterOrDigit(rest[i]) || rest[i] == '_')) i++;
+            var key = rest.Substring(keyStart, i - keyStart);
+            if (key.Length == 0) return ("出现空字段名", fields);
+            if (i >= rest.Length || rest[i] != '=') return ($"字段 {key} 缺少 =", fields);
+            i++;
+
+            string value;
+            if (i < rest.Length && rest[i] == '"')
+            {
+                i++;
+                var sb = new StringBuilder();
+                var closed = false;
+                while (i < rest.Length)
+                {
+                    if (rest[i] == '\\' && i + 1 < rest.Length) { sb.Append(rest[i + 1]); i += 2; continue; }
+                    if (rest[i] == '"') { i++; closed = true; break; }
+                    sb.Append(rest[i]);
+                    i++;
+                }
+                if (!closed) return ($"字段 {key} 的引号没有闭合", fields);
+                value = sb.ToString();
+            }
+            else
+            {
+                var start = i;
+                while (i < rest.Length && !char.IsWhiteSpace(rest[i])) i++;
+                value = rest.Substring(start, i - start);
+            }
+
+            if (fields.ContainsKey(key)) return ($"字段 {key} 重复", fields);
+            fields[key] = value;
+        }
+
+        return (null, fields);
+    }
+
+    static string? RightmostName(TypeSyntax syntax) => syntax switch
 {
     IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
     GenericNameSyntax generic => generic.Identifier.ValueText,
