@@ -3,21 +3,10 @@
 //
 // 需求里"多类抽象"要用类型表达：枚举能表达的种类是封闭的，加一个要在所有
 // switch 它的地方回来改；类型是开放的，加一个不动别人。
-export const probe = {
-  file: 'Core/Slot.cs',
-  kind: 'replace',
-  find: '    public string Name { get; } = name;',
-  with: '    public string Name { get; } = name;\n\n    public enum EProbe { A, B }'
-}
-
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
 
-if (args.includes('--probe-spec')) {
-  console.log(JSON.stringify(probe))
-  process.exit(0)
-}
 let config = {}
 try {
   config = JSON.parse(readFileSync(args[args.indexOf('--config') + 1], 'utf8'))

@@ -3,21 +3,9 @@
 //
 // 这一条是项目自己的：哪些字符串算"数据名"由这个项目的目录划分决定。
 // 判据用集合求交，不用子串——子串会让一个空串把整棵树判红。
-export const probe = {
-  file: 'Core/Slot.cs',
-  kind: 'replace',
-  find: '    public string Name { get; } = name;',
-  with: '    public string Name { get; } = name;\n\n    public string Probe() => "手";'
-}
-
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
-
-if (args.includes('--probe-spec')) {
-  console.log(JSON.stringify(probe))
-  process.exit(0)
-}
 
 let config = {}
 try {

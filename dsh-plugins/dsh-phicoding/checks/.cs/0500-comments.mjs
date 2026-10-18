@@ -21,21 +21,9 @@
 //
 // 字段表是封闭的：不认识的键报错，否则拼错的键会静默失效，而那条注释看起来
 // 完全合规。
-export const probe = {
-  file: 'Core/Slot.cs',
-  kind: 'replace',
-  find: '    public string Name { get; } = name;',
-  with: '    public string Name { get; } = name;\n\n    // 随手写一句\n    public int Probe => 0;'
-}
-
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
-
-if (args.includes('--probe-spec')) {
-  console.log(JSON.stringify(probe))
-  process.exit(0)
-}
 
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
 

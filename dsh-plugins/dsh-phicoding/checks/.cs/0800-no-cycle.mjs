@@ -3,22 +3,8 @@
 //
 // 边来自语义底座解析出的真引用，所以成员撞类型名不会造出伪边，也就不会像
 // 逐 token 的检查器那样把不相干的类型连成环。
-export const probe = {
-  file: 'Core/Sheet.cs',
-  kind: 'replace',
-  find: '    public bool Tagged(string mark) => marks.Contains(mark);',
-  with: '    public bool Tagged(string mark) => marks.Contains(mark);\n\n    public Shift Probe() => null;'
-}
-
 import { readFileSync } from 'node:fs'
 const args = process.argv.slice(2)
-
-// 声明探针：由 CLI 派子进程来问，而不是被 import —— 导入会执行规则本身。
-// 这样任何语言写的规则都能提供探针。
-if (args.includes('--probe-spec')) {
-  console.log(JSON.stringify(probe))
-  process.exit(0)
-}
 
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
 

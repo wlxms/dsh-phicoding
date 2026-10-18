@@ -18,21 +18,9 @@
 //
 // why 只有三类（见 0500）：data / serialization / plumbing。注释本身的格式由 0500 判，
 // 这条规则只读 waive 与 why 两个字段——**一套格式，两处规则共用**。
-export const probe = {
-  file: 'Core/Slot.cs',
-  kind: 'replace',
-  find: '    public string Name { get; } = name;',
-  with: '    public string Name { get; } = name;\n\n    public bool Probe(string kind) => kind == "探针分类";'
-}
-
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
-
-if (args.includes('--probe-spec')) {
-  console.log(JSON.stringify(probe))
-  process.exit(0)
-}
 
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
 

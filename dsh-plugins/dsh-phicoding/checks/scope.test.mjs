@@ -159,15 +159,7 @@ console.log(`fixture: ${fixture}\n`)
   await rm(dir, { recursive: true, force: true })
 }
 
-// ---- 7. 两个模式不能同时开 ------------------------------------------------
-{
-  const dir = await fresh(fixture)
-  const r = run({ root: dir, args: ['--diff', '--probe'], env: { DSH_SESSION_ID: 'selftest-7' } })
-  expect('--diff 与 --probe 互斥 → exit 2', r.status === 2 && r.out.includes('不能同时用'), r.out.slice(-300))
-  await rm(dir, { recursive: true, force: true })
-}
-
-// ---- 8. 重拍基准会悄悄挪动基准，必须拒绝 ----------------------------------
+// ---- 7. 重拍基准会悄悄挪动基准，必须拒绝 ----------------------------------
 {
   const dir = await fresh(fixture)
   const env = { DSH_SESSION_ID: 'selftest-8' }

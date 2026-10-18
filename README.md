@@ -17,8 +17,6 @@
 # 结构检查（10 条语言级 + 项目自己的 3 条）
 node dsh-plugins/dsh-phicoding/checks/phicoding.mjs --root .spine-game
 
-# 探针自验：每条规则必须能自己变红，且只红自己那一条
-node dsh-plugins/dsh-phicoding/checks/phicoding.mjs --root .spine-game --probe
 
 # 列出规则（从目录扫，不手写清单）
 node dsh-plugins/dsh-phicoding/checks/phicoding.mjs --list
@@ -56,10 +54,10 @@ node dsh-plugins/dsh-phicoding/checks/phicoding.mjs --list
 
 ## 检查器纪律
 
-- **每条规则必须能自己变红一次，且只红自己那一条**（`--probe` 自动跑）
-- **探针在副本里跑**，检查器对工程代码零写入
+- **规则的正确性由框架自带的测试承担**（`checks/*.test.mjs`，用合成工程，不依赖任何项目源码）。业务项目不写测试、不写探针，只跑 CLI
+- **检查器对被测工程零写入**
 - **底座自己带自测**——它出过的三个漏洞都是「少了一整类事实而检查照绿」
-- 探针只改已有类型，不新增类型（新增会让「等级登记」一起红，破坏「只红一条」）
+- **没东西可判是正常的**：一条规则在某个工程上从未变红，可能只是这个工程没用到它。规则不要求项目为它造样例
 
 给检查器写规则的约定见 [`checks/README.md`](dsh-plugins/dsh-phicoding/checks/README.md)。
 

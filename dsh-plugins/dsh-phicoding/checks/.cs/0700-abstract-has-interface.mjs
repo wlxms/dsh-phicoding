@@ -6,21 +6,9 @@
 //
 // 判据的限：只查"有没有接口"，不查"接口有没有覆盖它的完整抽象面"。
 // 底座不记录成员级的 abstract 修饰符，那一半归哲学法官软审，不在这里假装查到。
-export const probe = {
-  file: 'Core/Slot.cs',
-  kind: 'replace',
-  find: 'public abstract class Slot : ISlot',
-  with: 'public abstract class Slot'
-}
-
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
-
-if (args.includes('--probe-spec')) {
-  console.log(JSON.stringify(probe))
-  process.exit(0)
-}
 
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
 

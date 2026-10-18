@@ -13,22 +13,10 @@
 //
 // 只查主干。工厂必然同时引用抽象和它全部的具现，那是工厂的职责，不是泄漏 ——
 // 所以主干在哪必须由项目声明，规则不许自己猜。
-// 探针往 Adjust.cs 末尾追加一个持有者：它同时引用抽象基类 Adjust 与具体子类
-// Flat，正是"抽象档又引用具体子类"这一档的违规。用 append 而不是 replace，
-// 因为要新增一个顶层类型 —— 改已有类型的内部会顺带动到别的规则。
-export const probe = {
-  file: 'Core/Adjust.cs',
-  kind: 'append',
-  inject: '\npublic sealed class ProbeHolder\n{\n    public Adjust Any { get; } = null!;\n\n    public Flat Specific { get; } = null!;\n}\n'
-}
 
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
-if (args.includes('--probe-spec')) {
-  console.log(JSON.stringify(probe))
-  process.exit(0)
-}
 
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
 

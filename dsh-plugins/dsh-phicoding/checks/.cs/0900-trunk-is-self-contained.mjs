@@ -8,22 +8,10 @@
 //
 // 为什么这等价于"主干只知抽象"：主干是最低等级，它要用的契约必须长在它自己
 // 里面。一旦它引用外部的类型，那外部类型就比它高——不管中间隔了几层。
-// 探针往主干里追加一个只引用 Data 类型的新类型。用"新类型"而不是"给已有类型
-// 加字段"，是为了让它没有入边：给 Value 加一个 Sword 字段会连成
-// Value → Sword → Equip → Sheet → Value 的环，把 0800 一起打红。
-export const probe = {
-  file: 'Core/Value.cs',
-  kind: 'append',
-  inject: '\npublic sealed class ProbeLeak\n{\n    public Sword Leak { get; } = null!;\n}\n'
-}
 
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
-if (args.includes('--probe-spec')) {
-  console.log(JSON.stringify(probe))
-  process.exit(0)
-}
 
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
 

@@ -13,20 +13,9 @@
 //                且当它只扩展一个本工程类型时，名字要以那个类型开头
 //
 // 枚举这条只在主干之外才真正生效：0300 在主干禁枚举，所以主干里恒为绿。
-export const probe = {
-  file: 'Core/Slot.cs',
-  kind: 'append',
-  inject: '\npublic interface Probe\n{\n}\n'
-}
-
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
-
-if (args.includes('--probe-spec')) {
-  console.log(JSON.stringify(probe))
-  process.exit(0)
-}
 
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
 

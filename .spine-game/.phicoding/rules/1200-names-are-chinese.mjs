@@ -3,21 +3,9 @@
 //
 // 这是项目约定（中国风），不是编码哲学——所以它住在项目里，不跟着通用规则走。
 // 长度 >= 2 才判：单个字母常是格式串或标记，不是画面文字。
-export const probe = {
-  file: 'Core/Slot.cs',
-  kind: 'replace',
-  find: '    public string Name { get; } = name;',
-  with: '    public string Name { get; } = name;\n\n    public string Probe() => "hello";'
-}
-
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
-
-if (args.includes('--probe-spec')) {
-  console.log(JSON.stringify(probe))
-  process.exit(0)
-}
 
 let config = {}
 try {

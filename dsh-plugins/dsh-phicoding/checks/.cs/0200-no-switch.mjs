@@ -3,21 +3,10 @@
 //
 // 分支一旦按值分派，加一种就要回来改这里一次；设计模式优先，就是把这种
 // "每次都要回来改"的地方消灭掉。
-export const probe = {
-  file: 'Core/Slot.cs',
-  kind: 'replace',
-  find: '    public string Name { get; } = name;',
-  with: '    public string Name { get; } = name;\n\n    public int Probe(int x) { switch (x) { default: return 0; } }'
-}
-
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
 
-if (args.includes('--probe-spec')) {
-  console.log(JSON.stringify(probe))
-  process.exit(0)
-}
 let config = {}
 try {
   config = JSON.parse(readFileSync(args[args.indexOf('--config') + 1], 'utf8'))

@@ -17,10 +17,10 @@
 // a checker that goes blind reports the same thing as success.
 //
 // Usage:
-//   phicoding --root <dir> [--only <id>] [--probe] [--list] [--json]
+//   phicoding --root <dir> [--only <id>] [--list] [--json]
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, extname, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -41,7 +41,6 @@ const root = value('--root') ?? process.cwd()
 const only = value('--only')
 const wantList = flag('--list')
 const wantJson = flag('--json')
-const wantProbe = flag('--probe')
 // Rules are generic; a project's shape is not. Which directory is the trunk,
 // what the comment format is, who the author is - all of that belongs to the
 // project, so a rule reads it from here rather than hard-coding it.
@@ -55,13 +54,6 @@ const configPath = value('--config') ?? join(root, '.phicoding', 'config.json')
 const wantBegin = flag('--session-begin')
 const wantDiff = flag('--diff')
 const sessionId = value('--session') ?? process.env.DSH_SESSION_ID
-
-if (wantDiff && wantProbe) {
-  // A probe has to run the rule over the whole project to prove it reddens only
-  // itself. Narrowing the scope first would turn that proof into a tautology.
-  console.error('phicoding: --diff 与 --probe 不能同时用。探针要跑整个项目才能证明每条规则只红自己。')
-  process.exit(2)
-}
 
 if (wantBegin) {
   if (!sessionId) {
@@ -192,115 +184,6 @@ function runBase(dll, targetRoot, factsPath) {
   return { facts, text }
 }
 
-// ---- probe -----------------------------------------------------------------
-// Each rule may declare a `probe`: what to inject to make it, and only it, go
-// red. A rule without one is reported as an uncovered gap rather than passed
-// over - the gap is the finding.
-async function probeSpec(rule) {
-  const ext = extname(rule.path).toLowerCase()
-  const node = ext === '.mjs' || ext === '.js'
-  const launcher = node ? 'node' : ext === '.sh' ? 'sh' : rule.path
-  const argv = node || ext === '.sh' ? [rule.path, '--probe-spec'] : ['--probe-spec']
-  const asked = spawnSync(launcher, argv, { encoding: 'utf8' })
-  if (asked.status !== 0) return null
-  try {
-    return JSON.parse((asked.stdout ?? '').trim())
-  } catch {
-    return null
-  }
-}
-
-async function copyTree(from, to) {
-  await mkdir(to, { recursive: true })
-  for (const entry of await readdir(from, { withFileTypes: true })) {
-    if (SKIP.has(entry.name)) continue
-    const src = join(from, entry.name)
-    const dst = join(to, entry.name)
-    if (entry.isDirectory()) await copyTree(src, dst)
-    else await copyFile(src, dst)
-  }
-}
-
-// Every probe runs against a throwaway COPY of the project.
-//
-// A checker must not write to the code it is judging. Injecting in place and
-// restoring afterwards looks equivalent and is not: a crash, a Ctrl-C or a
-// killed process leaves the injection behind, so the act of checking silently
-// modifies the project. The original tree stays read-only.
-async function runProbes(dll, allRules, toolsDir, sourceRoot, baseRed, baseSkip) {
-  const results = []
-  for (const rule of allRules) {
-    // A rule that does not apply here has no probe to prove either: it would exit 3
-    // in the copy as well, and calling that "stayed-green" would blame the rule for
-    // an absent optional input.
-    if (baseSkip.has(rule.id)) {
-      results.push({ id: rule.id, verdict: 'skipped' })
-      continue
-    }
-    // The net had a precondition nobody wrote down: it compared against an
-    // absolute "nothing else is red". One rule the project already violates then
-    // reddens every other rule's probe, and the whole net reads FAIL for one
-    // unrelated reason. So the baseline is measured first, and a rule that is
-    // already red says so instead of pretending its probe proved anything.
-    if (baseRed.has(rule.id)) {
-      results.push({ id: rule.id, verdict: 'baseline-red' })
-      continue
-    }
-    const spec = await probeSpec(rule)
-    if (!spec) {
-      results.push({ id: rule.id, verdict: 'no-probe' })
-      continue
-    }
-
-    const copy = await mkdtemp(join(tmpdir(), 'phicoding-probe-'))
-    try {
-      await copyTree(sourceRoot, copy)
-      const target = join(copy, spec.file)
-      if (!existsSync(target)) {
-        results.push({ id: rule.id, verdict: 'probe-file-missing', detail: spec.file })
-        continue
-      }
-      const original = await readFile(target, 'utf8')
-
-      // A probe edits an existing type rather than appending a new one. A new
-      // type would be unregistered, which reddens the registration rule too -
-      // and a probe must redden exactly the rule it belongs to.
-      if (spec.kind === 'replace' && !original.includes(spec.find)) {
-        results.push({ id: rule.id, verdict: 'probe-anchor-missing', detail: spec.find.slice(0, 60) })
-        continue
-      }
-
-      await writeFile(target, spec.kind === 'create'
-        ? spec.inject
-        : spec.kind === 'replace'
-          ? original.replace(spec.find, spec.with)
-          : original + '\n' + spec.inject, 'utf8')
-
-      const probeFacts = join(copy, '.probe-facts.json')
-      const payload = runBase(dll, copy, probeFacts)
-      // The base returns the JSON; a rule reads it from disk. Forgetting this
-      // line made every rule fail with "cannot read facts" and the probe net
-      // reported it as every rule reddening every other - which is exactly what
-      // the net is for.
-      await writeFile(probeFacts, payload.text, 'utf8')
-      const red = allRules.map((r) => runRule(r, probeFacts, toolsDir, copy)).filter((r) => !r.ok && !r.skipped)
-      const mine = red.filter((r) => r.id === rule.id)
-      const others = red.filter((r) => r.id !== rule.id && !baseRed.has(r.id))
-      results.push({
-        id: rule.id,
-        verdict: mine.length === 1 && others.length === 0
-          ? 'ok'
-          : mine.length === 0
-            ? 'stayed-green'
-            : `reddened-others: ${others.map((o) => o.id).join(', ')}`
-      })
-    } finally {
-      // The original is untouched either way; this only cleans the scratch copy.
-      await rm(copy, { recursive: true, force: true })
-    }
-  }
-  return results
-}
 
 // ---- main ------------------------------------------------------------------
 const langDirs = await languages()
@@ -410,7 +293,7 @@ if (wantDiff) {
 }
 
 for (const lang of active) {
-  const entry = { ext: lang.ext, files: lang.count, rules: [], probes: [] }
+  const entry = { ext: lang.ext, files: lang.count, rules: [] }
   console.log(`== ${lang.ext}  ${lang.count} 个文件`)
 
   let dll
@@ -444,29 +327,6 @@ for (const lang of active) {
 
   const all = await rulesOf(lang.dir, localRules)
   const chosen = only ? all.filter((r) => r.id.includes(only)) : all
-
-  if (wantProbe) {
-    const scanned = all.map((r) => runRule(r, factsPath, lang.dir, root))
-    const baseRed = new Set(scanned.filter((r) => !r.ok && !r.skipped).map((r) => r.id))
-    const baseSkip = new Set(scanned.filter((r) => r.skipped).map((r) => r.id))
-    entry.probes = await runProbes(dll, all, lang.dir, root, baseRed, baseSkip)
-    for (const p of entry.probes) {
-      const quiet = p.verdict === 'ok' || p.verdict === 'no-probe' || p.verdict === 'baseline-red' || p.verdict === 'skipped'
-      const mark = p.verdict === 'ok' ? 'ok  ' : p.verdict === 'no-probe' ? 'GAP ' : p.verdict === 'baseline-red' ? 'BASE' : p.verdict === 'skipped' ? 'skip' : 'FAIL'
-      console.log(`   ${mark} ${p.id}${p.detail ? '  ' + p.detail : ''}${quiet ? '' : '  ' + p.verdict}`)
-      if (!quiet) report.failed++
-    }
-    const gaps = entry.probes.filter((p) => p.verdict === 'no-probe').length
-    if (gaps > 0) console.log(`   探针覆盖缺口 ${gaps} 条 —— 没被反例验过的规则，等于没验过`)
-    const already = entry.probes.filter((p) => p.verdict === 'baseline-red')
-    if (already.length > 0) {
-      console.log(`   基线已红 ${already.length} 条：${already.map((p) => p.id).join(', ')}`)
-      console.log('   规则确实会红（项目自己证的），但探针证明不了它只红自己 —— 把项目修绿，这条网才算完整')
-    }
-    await rm(dir, { recursive: true, force: true })
-    report.languages.push(entry)
-    continue
-  }
 
   for (const rule of chosen) {
     const result = runRule(rule, factsPath, lang.dir, root)

@@ -4,21 +4,10 @@
 // 锚点是规划的产物，不是代码的属性——所以它在项目里，不在通用规则里。
 // 只核两件事：每条锚点有归属；归属指向的规则真的在目录里。
 // 规则清单从目录扫，不手写。
-export const probe = {
-  file: 'PLAN.md',
-  kind: 'append',
-  inject: '\n| A99 | 探针锚点 | 无 |\n'
-}
-
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 const args = process.argv.slice(2)
-
-if (args.includes('--probe-spec')) {
-  console.log(JSON.stringify(probe))
-  process.exit(0)
-}
 
 const root = args[args.indexOf('--root') + 1]
 const toolsDir = args[args.indexOf('--rules') + 1]
@@ -48,8 +37,6 @@ try {
   process.exit(1)
 }
 
-// 锚点在规划里是一张表的第一列 —— 但规划里还有其他表（失败记录、规格留白、
-// 探针），它们也用第一列当编号。所以按锚点前缀匹配，前缀由项目声明。
 const prefix = config.anchorPrefix ?? 'A'
 const pattern = new RegExp('^\\|\\s*(' + prefix + '\\d+[a-z]?)\\s*\\|')
 const declared = new Set()
@@ -67,7 +54,7 @@ for (const dir of [toolsDir, join(root, '.phicoding', 'rules')]) {
   }
 }
 
-const reserved = new Set(['Spec', 'probe', 'all-rules'])
+const reserved = new Set(['Spec', 'all-rules', 'tests'])
 const hits = []
 
 for (const anchor of declared) {
