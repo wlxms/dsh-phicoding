@@ -33,3 +33,6 @@
 *.log
 *.tmp
 *.tmp.*
+
+# Copilot 套件是生成物，不入库
+/dist/

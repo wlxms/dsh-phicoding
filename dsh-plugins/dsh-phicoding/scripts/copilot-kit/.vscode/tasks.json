@@ -1,0 +1,18 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "phicoding: 检查",
+      "type": "shell",
+      "command": "node phicoding/checks/phicoding.mjs --root .",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "phicoding: 列出规则",
+      "type": "shell",
+      "command": "node phicoding/checks/phicoding.mjs --root . --list",
+      "problemMatcher": []
+    }
+  ]
+}

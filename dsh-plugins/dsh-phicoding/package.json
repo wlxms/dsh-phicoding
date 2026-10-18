@@ -7,10 +7,10 @@
   "engines": { "dsh": ">=0.1.0-rc.6" },
   "main": "lib/index.js",
   "exports": { ".": "./lib/index.js", "./package.json": "./package.json" },
-  "files": ["lib", "skills", "dsh.plugin.json", "cordis.patch.yml", "README.md", "LICENSE"],
+  "files": ["lib", "skills", "scripts/copilot-kit", "dsh.plugin.json", "cordis.patch.yml", "README.md", "LICENSE"],
   "license": "MIT",
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
-  "scripts": { "verify": "node scripts/verify-provider.mjs" },
+  "scripts": { "verify": "node scripts/verify-provider.mjs", "build:copilot": "node scripts/build-copilot-kit.mjs" },
   "keywords": ["dsh", "dsh-plugin", "deepseek-harness", "plugin", "skills", "phicoding", "no-else", "types-over-enums"],
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
 }
