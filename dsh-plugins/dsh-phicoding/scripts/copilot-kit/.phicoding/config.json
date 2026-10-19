@@ -1,8 +1,0 @@
-{
-  "_说明": "trunk 是主干（只知抽象的那块），variants 是变体（具体实现）。改成你自己的目录。",
-  "trunk": "src/Core",
-  "variants": ["src/Game"],
-  "trunkComments": "formatted",
-  "author": "your-name",
-  "plan": "PLAN.md"
-}

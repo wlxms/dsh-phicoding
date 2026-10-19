@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/wlxms/dsh-phicoding/main/install-co
 node "$env:USERPROFILE\.copilot\phicoding\checks\phicoding.mjs" --root <你的项目>
 ```
 
-**依赖**：Node.js ≥ 18、.NET SDK ≥ 8（首次运行编译语法底座，约 3 秒）。
+**依赖**：Node.js ≥ 18、.NET SDK ≥ 8（首次运行编译语法底座，约 3 秒）。项目侧不用手写配置——首次运行会自动推断 `trunk` / `variants` / `author` 并生成 `.phicoding/config.json`。
 
 ## 快速开始（仓库内）
 

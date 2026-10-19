@@ -151,7 +151,7 @@ try {
     Write-Host '  卸载：.\install-copilot.ps1 -Uninstall'
     Write-Host ''
     Write-Host '  还需要：.NET SDK >= 8（检查器首次运行会用 Roslyn 编译语法底座，约 3 秒）'
-    Write-Host '  项目侧配置：在目标仓库建 .phicoding/config.json，写明 trunk / variants / author'
+    Write-Host '  项目侧配置不用手写：首次运行会在目标仓库自动推断 .phicoding/config.json（trunk / variants / author），不满意再改。'
 }
 finally {
     if (Test-Path $scratch) { Remove-Item $scratch -Recurse -Force -ErrorAction SilentlyContinue }

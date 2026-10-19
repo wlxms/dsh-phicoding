@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 const kit = dirname(fileURLToPath(import.meta.url))
 const target = resolve(process.argv[2] ?? '.')
 const force = process.argv.includes('--force')
-const ITEMS = ['.github', 'phicoding', '.vscode', '.phicoding']
+const ITEMS = ['.github', 'phicoding', '.vscode']
 
 let copied = 0
 let skipped = 0
@@ -45,5 +45,5 @@ for (const item of ITEMS) await place(join(kit, item), join(target, item))
 
 console.log('')
 console.log('完成：写入 ' + copied + ' 个文件，跳过 ' + skipped + ' 个。')
-console.log('下一步：改 ' + join(target, '.phicoding', 'config.json') + ' 里的 trunk / variants / author，')
-console.log('然后跑：node phicoding/checks/phicoding.mjs --root .')
+console.log('下一步：直接跑 node phicoding/checks/phicoding.mjs --root .')
+console.log('第一次运行会自动推断 trunk / variants / author 并生成 .phicoding/config.json。')

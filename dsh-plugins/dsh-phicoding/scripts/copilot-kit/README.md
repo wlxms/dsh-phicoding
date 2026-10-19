@@ -14,7 +14,6 @@
 | `.github/copilot-instructions.md` | 常驻指令：写代码前加载技能、交付前跑检查器 |
 | `phicoding/checks/` | 检查器本体（Node + Roslyn 语法底座） |
 | `.vscode/tasks.json` | 一键跑检查（终端 → 运行任务） |
-| `.phicoding/config.json` | 项目配置：主干、变体、作者 |
 
 ## 安装
 
@@ -24,19 +23,26 @@
 node <本套件目录>/install.mjs .
 ```
 
-然后改 `.phicoding/config.json`：
+然后直接跑一次：
 
-```json
-{
-  "trunk": "src/Core",
-  "variants": ["src/Game"],
-  "trunkComments": "formatted",
-  "author": "your-name",
-  "plan": "PLAN.md"
-}
+```
+node phicoding/checks/phicoding.mjs --root .
 ```
 
-`trunk` 是**只知抽象的那一块**，`variants` 是具体实现。写错这两个目录，规则会判错地方。
+**第一次运行会自己生成 `.phicoding/config.json`**，并把推断依据打出来：
+
+```
+   已生成 .phicoding/config.json
+     主干 src/Core/ —— 33 个类型，没有一条引用指向它外面（闭合）
+     变体 src/Game
+     作者 wlxms（git config user.name）
+   想改就改这个文件——规则只读它，不猜。
+```
+
+主干靠**依赖图判闭合**（某一组类型不引用组外任何类型），作者取 `git config user.name`。
+两项都是工程里已有的东西，不需要你先懂这套哲学再手填。
+
+想换一个判断就手改那个文件；`phicoding --init` 可以随时重新推断一遍。
 
 ## 用法
 

@@ -17,7 +17,7 @@
 // a checker that goes blind reports the same thing as success.
 //
 // Usage:
-//   phicoding --root <dir> [--only <id>] [--list] [--json]
+//   phicoding --root <dir> [--only <id>] [--list] [--init] [--json]
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises'
@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os'
 import { dirname, extname, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as scope from './scope.mjs'
+import * as init from './init.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const SKIP = new Set(['bin', 'obj', 'node_modules', '.git', '.build'])
@@ -44,7 +45,9 @@ const wantJson = flag('--json')
 // Rules are generic; a project's shape is not. Which directory is the trunk,
 // what the comment format is, who the author is - all of that belongs to the
 // project, so a rule reads it from here rather than hard-coding it.
-const configPath = value('--config') ?? join(root, '.phicoding', 'config.json')
+const explicitConfig = value('--config')
+const wantInit = flag('--init')
+const configPath = explicitConfig ?? join(root, '.phicoding', 'config.json')
 
 // ---- session scope ---------------------------------------------------------
 // An established project already violates most of these rules, and a checker that
@@ -324,6 +327,28 @@ for (const lang of active) {
   }
 
   console.log(`   底座：types=${facts.types.length}  refs=${facts.references.length}`)
+
+  // 主干在哪、作者是谁，都能从工程里读出来——不该留一个空配置让所有规则报
+  // "读不到项目配置"。判得对不对写在输出里，用户随时可以改那个文件。
+  if (wantInit || (!explicitConfig && !existsSync(configPath))) {
+    // 先记下"原来有没有"，再保存——保存之后就看不出来了，而"已生成"和
+    // "重写"对用户是两件不同的事。
+    const existed = existsSync(configPath)
+    const detected = init.detect(facts, root)
+    if (!detected) {
+      console.log('   推断不出结构（工程里没有可用的类型），配置未生成。')
+    } else {
+      await init.save(root, detected.config)
+      // 不按 root 的长度切路径：root 可能是 "."，切出来的是错的。
+      console.log(`   ${existed ? '重写' : '已生成'} .phicoding/config.json`)
+      for (const reason of detected.reasons) console.log(`     ${reason}`)
+      console.log('   想改就改这个文件——规则只读它，不猜。')
+    }
+    if (wantInit) {
+      await rm(dir, { recursive: true, force: true })
+      process.exit(detected ? 0 : 1)
+    }
+  }
 
   const all = await rulesOf(lang.dir, localRules)
   const chosen = only ? all.filter((r) => r.id.includes(only)) : all
