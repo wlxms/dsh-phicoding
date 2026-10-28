@@ -1,6 +1,6 @@
 # dsh-phicoding · Philosophy Coding
 
-把一套**自有的编码哲学**做成可强制执行的形态：**6 个常驻技能**（软性）+ **一个硬性检查器**（13 条规则）。
+把一套**自有的编码哲学**做成可强制执行的形态：**6 个常驻技能**（软性）+ **一个硬性检查器**（12 条规则）。
 
 不是文档，是**闸**——规则要么能被机器判定，要么就得先证明它判不了。
 
@@ -9,7 +9,7 @@
 | 层 | 是什么 | 在哪 |
 | --- | --- | --- |
 | **软性** | 6 个技能，常驻（每个会话都在） | [`dsh-plugins/dsh-phicoding/skills/`](dsh-plugins/dsh-phicoding/skills) |
-| **硬性** | 一条命令跑 13 条规则，不通过就不通过 | [`dsh-plugins/dsh-phicoding/checks/`](dsh-plugins/dsh-phicoding/checks) |
+| **硬性** | 一条命令跑 12 条规则，不通过就不通过 | [`dsh-plugins/dsh-phicoding/checks/`](dsh-plugins/dsh-phicoding/checks) |
 
 ## 装进 VS Code Copilot（全局，一条命令）
 
@@ -51,7 +51,7 @@ node "$env:USERPROFILE\.copilot\phicoding\checks\phicoding.mjs" --root <你的�
 ## 快速开始（仓库内）
 
 ```powershell
-# 结构检查（10 条语言级 + 项目自己的 3 条）
+# 结构检查（9 条语言级 + 项目自己的 3 条）
 node dsh-plugins/dsh-phicoding/checks/phicoding.mjs --root .spine-game
 
 # 列出规则（从目录扫，不手写清单）

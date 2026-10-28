@@ -54,7 +54,8 @@ for (const dir of [toolsDir, join(root, '.phicoding', 'rules')]) {
   }
 }
 
-const reserved = new Set(['Spec', 'all-rules', 'tests'])
+// manual = 这条锚点没有机械守卫了，靠人工审查。它必须是**明说**的，不能是漏掉。
+const reserved = new Set(['Spec', 'all-rules', 'tests', 'manual'])
 const hits = []
 
 for (const anchor of declared) {
