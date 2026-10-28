@@ -66,7 +66,7 @@ const cases = [
   },
   {
     name: '不认识的字段 → 违规（拼错的键不能静默通过）',
-    comment: '// [Administrator 2026-10-18 waiv=0650 why=data] x',
+    comment: '// [Administrator 2026-10-18 waiv=0750 why=data] x',
     red: 1,
     expect: /不认识的字段 waiv/,
   },
@@ -78,13 +78,13 @@ const cases = [
   },
   {
     name: 'waive 了却没说 why → 违规',
-    comment: '// [Administrator 2026-10-18 waive=0650] x',
+    comment: '// [Administrator 2026-10-18 waive=0750] x',
     red: 1,
     expect: /却没说 why/,
   },
   {
     name: 'why 不在三类里 → 违规',
-    comment: '// [Administrator 2026-10-18 waive=0650 why=因为我乐意] x',
+    comment: '// [Administrator 2026-10-18 waive=0750 why=因为我乐意] x',
     red: 1,
     expect: /只认 data \/ serialization \/ plumbing/,
   },
@@ -96,7 +96,7 @@ const cases = [
   },
   {
     name: 'waive 多个规则 → 放过',
-    comment: '// [Administrator 2026-10-18 waive=0650,0700 why=plumbing] x',
+    comment: '// [Administrator 2026-10-18 waive=0750,0700 why=plumbing] x',
     red: 0,
   },
 ]

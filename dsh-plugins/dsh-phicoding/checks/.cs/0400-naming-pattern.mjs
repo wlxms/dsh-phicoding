@@ -12,7 +12,7 @@
 //   扩展类      结构：含 this 首参的方法         → Extension 结尾
 //                且当它只扩展一个本工程类型时，名字要以那个类型开头
 //
-// 枚举这条只在主干之外才真正生效：0300 在主干禁枚举，所以主干里恒为绿。
+// 枚举本身已不在硬检查里（归法官软审），但一旦出现，它的命名范式仍然要守。
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
