@@ -3,6 +3,7 @@ namespace Spine.Spec;
 using Spine;
 using Spine.Data;
 
+// [Administrator 2026-10-28 waive=0750 why=plumbing] 用例构造器：它必须把具体的 Thing 摆出来
 public static class CasesSpec
 {
     public static int RunAll(string? planPath)

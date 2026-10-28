@@ -8,37 +8,24 @@
 //   B 是具体类    A 一个子类都不许再引用        （已经具体到底了）
 //
 // 为什么是这三档：A 引用了 B，说明 A 站在 B 这一档上看这个族。再引用更具体的
-// 类型，就等于把"具体是谁"钉进了 A —— 那个抽象点成了装饰。档位越高，允许的
-// 具体度越高：接口只认接口，抽象类只认抽象类，具体类不认任何子类。
+// 类型，就等于把"具体是谁"钉进了 A —— 那个抽象点成了装饰。
 //
-// 只查主干。工厂必然同时引用抽象和它全部的具现，那是工厂的职责，不是泄漏 ——
-// 所以主干在哪必须由项目声明，规则不许自己猜。
+// **全项目判，不按目录划范围。** 判据是代码自身的性质：A 到底知不知道那个具体
+// 类型，跟它放在哪个目录无关。主干是不是可判，跟这条规则无关。
+//
+// 工厂与组合根是唯一的正当例外：它们必然同时引用抽象和全部具现。那不是泄漏，
+// 是职责。这种类型用一条注释显式放行，而不是靠一个目录边界悄悄放过：
+//
+//   // [作者 日期 waive=0750 why=plumbing] 这是工厂，它必须认识全部具现
+//
+// 豁免写在这个类型内部任意位置，对该类型的全部发现生效——被豁免的是"这个类型
+// 的角色"，不是某一行。豁免数会打进摘要，否则"没人违规"和"全被豁免"长得一样。
 
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
 
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
-
-let config
-try {
-  config = JSON.parse(readFileSync(args[args.indexOf('--config') + 1], 'utf8'))
-} catch {
-  console.log('没有项目配置 —— 主干范围无从确定，跳过，不算通过。')
-  process.exit(3)
-}
-
-// "." 与 "" 都表示"整个项目都是主干"。不归一化的话 trunk = "." 会让
-// `Types.cs`.startsWith(".") 为假：规则不报错，只是永远不判，读起来像干净。
-const trunk = String(config.trunk ?? '')
-  .split('\\')
-  .join('/')
-  .replace(/^\.\/?/, '')
-  .replace(/\/$/, '')
-if (config.trunk === undefined || config.trunk === null) {
-  console.log('项目配置里没有 trunk。主干是哪一块必须由项目声明，规则不许自己猜。')
-  process.exit(3)
-}
 
 const byName = new Map()
 for (const type of facts.types) if (!byName.has(type.name)) byName.set(type.name, type)
@@ -69,7 +56,6 @@ function parents(type) {
 
 const isInterface = (type) => type.kind === 'interface'
 const isAbstract = (type) => !isInterface(type) && type.isAbstract === true
-const isConcrete = (type) => !isInterface(type) && type.isAbstract !== true
 
 // 立刻能判出"这个 C 越界了吗"。返回越界说明，或 null。
 function trespass(b, c) {
@@ -123,11 +109,19 @@ function outerOf(type) {
   return current.name
 }
 
-const inTrunk = (file) => trunk === '' || String(file).split('\\').join('/').startsWith(trunk)
+// 豁免：这个类型的角色本身允许同时认识抽象与具现（工厂、组合根）。
+const waives = (comment) => String(comment.fields?.waive ?? '').split(',').map((one) => one.trim())
 
 const hits = []
+const excused = {}
+
 for (const owner of facts.types) {
-  if (!inTrunk(owner.file)) continue
+  const granted = (owner.comments ?? []).find((comment) => waives(comment).includes('0750'))
+  if (granted) {
+    const why = granted.fields?.why ?? 'unknown'
+    excused[why] = (excused[why] ?? 0) + 1
+    continue
+  }
 
   // 这个类型直接引用的目标，按出现顺序，每个目标留第一条边（报错要指位置）。
   const targets = new Map()
@@ -154,4 +148,12 @@ for (const owner of facts.types) {
 }
 
 for (const hit of hits) console.log(hit)
+
+const total = Object.values(excused).reduce((sum, one) => sum + one, 0)
+if (hits.length === 0 && total > 0) {
+  // 豁免本身是事实。不报出来，"没人违规"和"全被豁免了"就分不清。
+  const detail = Object.entries(excused).map(([why, n]) => `${why} ${n}`).join(' / ')
+  console.log(`豁免 ${total} 个类型（${detail}）`)
+}
+
 process.exit(hits.length === 0 ? 0 : 1)

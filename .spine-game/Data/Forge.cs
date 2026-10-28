@@ -2,6 +2,7 @@ namespace Spine.Data;
 
 using Spine;
 
+// [Administrator 2026-10-28 waive=0750 why=plumbing] 工厂：它必须认识全部具现，这是职责不是泄漏
 public sealed class Forge
 {
     private readonly Dictionary<string, Item> kinds = [];

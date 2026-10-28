@@ -194,7 +194,7 @@ $declares[$file] = $type;       // 检查器：循环里赋值，只有最后一
 | `0500-comments` | 注释只许是结构化追溯记录（全项目，不只主干）：`// [作者 日期 …] 原因`。括号里按空格切，字段表封闭，作者与项目一致，日期 `YYYY-MM-DD`，括号后必须有原因 | 要么删掉；要么写成 `// [wlxms 2026-10-18] 原因`。豁免写进括号：`waive=<规则id> why=<data/serialization/plumbing>` |
 | `0650-no-string-dispatch` | 主干里不按字符串字面量分派（`switch` 的 case / `==` `!=` / `is "字面量"`）。**字符串当键不算**——`Dictionary<string, Item>` 里的 string 可能是 itemId | 把种类升成 CLR 类型，让它变成 `switch` 的类型分派。逃不掉的场合（反序列化、线格式字段名）在成员内写 `// [作者 日期 waive=0650 why=serialization] 理由`，`why` 只能是 `data` / `serialization` / `plumbing` |
 | `0700-abstract-has-interface` | 每个抽象至少实现一个接口 | 给这个抽象抽一个能力接口让它实现。**不是删掉抽象**——接口是最小公开面，抽象配接口是常态 |
-| `0750-no-more-concrete` | 引用的具体度不越档 | 把那个更具体的引用换回 B 挡位上的类型：接口档换接口、抽象档换抽象。**不是删掉 B 的引用** |
+| `0750-no-more-concrete` | 引用的具体度不越档（**全项目判，不看目录**） | 把那个更具体的引用换回 B 挡位上的类型：接口档换接口、抽象档换抽象。**不是删掉 B 的引用**。工厂/组合根是正当例外，用 `// [作者 日期 waive=0750 why=plumbing] 理由` 放行 |
 | `0800-no-cycle` | 依赖无环（自引用、以及类型与其自身嵌套类型之间的互指不算） | 见 `phicoding-level` 的四步决策树 |
 | `0400-naming-pattern` | 名字必须符合所属类别的范式：接口 `I` / 枚举 `E` / 特性 `Attribute` / 异常 `Exception` / 扩展类 `Extension(s)`。类别由结构认定，不由名字认定 | 改名。类别是结构判出来的，所以这条不会因为改名而自我实现 |
 | `1000-` 以上 | 项目自带，看规则文件头注释 | — |

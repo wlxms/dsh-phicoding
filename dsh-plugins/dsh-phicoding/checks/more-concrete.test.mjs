@@ -81,8 +81,7 @@ public sealed class A { public IRoot Any { get; set; } = null!; public Other Unr
     red: 0,
   },
   {
-    name: '工厂在主干外 → 不判（同时引用抽象与全部具现是工厂的职责）',
-    trunk: 'Core/',
+    name: '工厂（同时引用抽象与全部具现）→ 全局判，不管它在哪个目录',
     layout: {
       'Core/Types.cs': `${family}`,
       'Data/Forge.cs': `namespace T;
@@ -94,14 +93,37 @@ public sealed class Forge
 }
 `,
     },
-    red: 0,
+    red: 1,
   },
   {
-    name: '同一个错误放进主干 → 判（证明上一条不是规则没跑）',
-    trunk: 'Core/',
+    name: '同一个工厂写了 waive=0750 → 放过，且摘要报告豁免',
+    layout: {
+      'Core/Types.cs': `${family}`,
+      'Data/Forge.cs': `namespace T;
+
+// [Administrator 2026-10-18 waive=0750 why=plumbing] 这是工厂，它必须认识全部具现
+public sealed class Forge
+{
+    public IRoot Any { get; set; } = null!;
+    public ConcRoot Made { get; set; } = null!;
+}
+`,
+    },
+    red: 0,
+    expect: /豁免 1 个类型（plumbing 1）/,
+  },
+  {
+    name: '豁免只作用于写了它的那个类型 → 旁边那个仍违规',
     layout: {
       'Core/Types.cs': `${family}
+// [Administrator 2026-10-18 waive=0750 why=plumbing] 只放行我自己
 public sealed class Forge
+{
+    public IRoot Any { get; set; } = null!;
+    public ConcRoot Made { get; set; } = null!;
+}
+
+public sealed class Sloppy
 {
     public IRoot Any { get; set; } = null!;
     public ConcRoot Made { get; set; } = null!;
@@ -167,7 +189,8 @@ for (const item of cases) {
   } else {
     const red = out.match(/^\s{3}RED\s+0750/m) ? 1 : 0
     const hitLines = out.split('\n').filter((line) => /引用了.*又引用了/.test(line)).length
-    ok = red === item.red && hitLines === item.red
+    const explained = !item.expect || item.expect.test(out)
+    ok = red === item.red && hitLines === item.red && explained
   }
   results.push({ name: item.name, ok })
   console.log(`${ok ? '  ok   ' : '  FAIL '} ${item.name}`)
