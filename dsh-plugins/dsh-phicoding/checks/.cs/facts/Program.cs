@@ -30,6 +30,7 @@ using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 
 if (args.Length < 1)
 {
@@ -81,6 +82,11 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
         .Distinct()
         .ToArray();
 
+    // Layout facts, not layout judgments: which line numbers are blank. A blank
+    // line inside a verbatim string or a multi-line comment is content, so it is
+    // excluded here once rather than argued about by every rule that reads layout.
+    var blankLines = RealBlankLines(tree);
+
     foreach (var (_, name, decl) in fileGroup)
     {
         var line = tree.GetLineSpan(decl.Span).StartLinePosition.Line + 1;
@@ -117,6 +123,8 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
                     && extensionMethod.ParameterList.Parameters[0].Modifiers.Any(SyntaxKind.ThisKeyword)
                         ? extensionMethod.ParameterList.Parameters[0].Type?.ToString()
                         : null;
+                var memberLine = tree.GetLineSpan(member.Span).StartLinePosition.Line + 1;
+                var memberEndLine = tree.GetLineSpan(member.Span).EndLinePosition.Line + 1;
                 members.Add(new
                 {
                     name = memberName,
@@ -124,13 +132,14 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
                     type = memberType,
                     isStatic = member.Modifiers.Any(SyntaxKind.StaticKeyword),
                     extensionOf,
-                    line = tree.GetLineSpan(member.Span).StartLinePosition.Line + 1,
+                    line = memberLine,
                     // A member's span is what an exemption comment inside it applies to.
-                    endLine = tree.GetLineSpan(member.Span).EndLinePosition.Line + 1,
+                    endLine = memberEndLine,
                     // Leading trivia (the comments written directly above the member) is
                     // outside Span but belongs to it. Without this line, a comment
                     // explaining an exemption never covers the member it explains.
-                    firstLine = tree.GetLineSpan(member.FullSpan).StartLinePosition.Line + 1
+                    firstLine = tree.GetLineSpan(member.FullSpan).StartLinePosition.Line + 1,
+                    blankLines = BlankInside(blankLines, memberLine, memberEndLine)
                 });
             }
         }
@@ -275,6 +284,7 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
             file = relative,
             line,
             endLine,
+            blankLines = BlankInside(blankLines, line, endLine),
             containing = (decl.Parent as TypeDeclarationSyntax)?.Identifier.ValueText,
             @base = decl.BaseList?.Types.FirstOrDefault()?.Type.ToString(),
             interfaces = decl.BaseList?.Types.Skip(1).Select(t => t.Type.ToString()).ToArray() ?? [],
@@ -366,10 +376,51 @@ static IEnumerable<TypeSyntax> ReferenceNamesIn(SyntaxNode scope)
         return (null, fields);
     }
 
-    // TypeSyntax covers plain names, generic names and qualified names. For
-    // `Spine.Data.Forge` the type is the rightmost segment; the namespace on the
-    // left is not a type and must not be reported as one.
-    static string? RightmostName(TypeSyntax syntax) => syntax switch
+// Blank line numbers (1-based) of a file. "Blank" means empty after trimming, so a
+// line of spaces counts: it reads as a gap to whoever opens the file. Lines inside
+// a multi-line token or comment are excluded - a blank line inside a verbatim string
+// or /* ... */ is content, and counting it would let a long block pass on the
+// strength of its data.
+static int[] RealBlankLines(SyntaxTree tree)
+{
+    var text = tree.GetText();
+    var covered = new HashSet<int>();
+
+    void Cover(TextSpan span)
+    {
+        if (span.Length == 0) return;
+        var first = text.Lines.GetLineFromPosition(span.Start).LineNumber;
+        var last = text.Lines.GetLineFromPosition(span.End - 1).LineNumber;
+        if (last == first) return;
+        for (var i = first; i <= last; i++) covered.Add(i);
+    }
+
+    foreach (var token in tree.GetRoot().DescendantTokens()) Cover(token.Span);
+    foreach (var trivia in tree.GetRoot().DescendantTrivia())
+    {
+        if (!trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) && !trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)) continue;
+        Cover(trivia.Span);
+    }
+
+    var found = new List<int>();
+    for (var i = 0; i < text.Lines.Count; i++)
+    {
+        if (covered.Contains(i)) continue;
+        if (text.Lines[i].ToString().Trim().Length > 0) continue;
+        found.Add(i + 1);
+    }
+    return found.ToArray();
+}
+
+// The blank lines strictly between a declaration's first and last line. Excluding
+// the boundaries keeps the braces and the signature from contributing anything.
+static int[] BlankInside(int[] blankLines, int firstLine, int lastLine) =>
+    blankLines.Where(line => line > firstLine && line < lastLine).ToArray();
+
+// TypeSyntax covers plain names, generic names and qualified names. For
+// `Spine.Data.Forge` the type is the rightmost segment; the namespace on the
+// left is not a type and must not be reported as one.
+static string? RightmostName(TypeSyntax syntax) => syntax switch
 {
     IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
     GenericNameSyntax generic => generic.Identifier.ValueText,
