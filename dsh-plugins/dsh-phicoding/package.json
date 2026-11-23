@@ -4,13 +4,42 @@
   "version": "0.1.0",
   "private": false,
   "type": "module",
-  "engines": { "dsh": ">=0.1.0-rc.6" },
+  "engines": {
+    "node": ">=18",
+    "dsh": "0.2.1-alpha.5 || 0.2.1-rc.1 || 0.2.1-rc.2 || 0.2.2-rc.5 || 0.2.3-alpha.1 || 0.2.3-alpha.2"
+  },
   "main": "lib/index.js",
   "exports": { ".": "./lib/index.js", "./package.json": "./package.json" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wlxms/dsh-phicoding.git",
+    "directory": "dsh-plugins/dsh-phicoding"
+  },
   "files": ["lib", "skills", "scripts/copilot-kit", "dsh.plugin.json", "cordis.patch.yml", "README.md", "LICENSE"],
   "license": "MIT",
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
   "scripts": { "verify": "node scripts/verify-provider.mjs", "build:copilot": "node scripts/build-copilot-kit.mjs" },
   "keywords": ["dsh", "dsh-plugin", "deepseek-harness", "plugin", "skills", "phicoding", "no-else", "types-over-enums"],
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "compatibility": {
+      "dsh": "0.2.1-alpha.5 || 0.2.1-rc.1 || 0.2.1-rc.2 || 0.2.2-rc.5 || 0.2.3-alpha.1 || 0.2.3-alpha.2",
+      "dshReleases": {
+        "0.2.1-alpha.5": "compatible",
+        "0.2.1-rc.1": "compatible",
+        "0.2.1-rc.2": "compatible",
+        "0.2.2-rc.5": "compatible",
+        "0.2.3-alpha.1": "compatible",
+        "0.2.3-alpha.2": "compatible"
+      },
+      "dshOperations": {
+        "0.2.1-alpha.5": { "install": "unknown", "start": "unknown", "uninstall": "unknown", "rollback": "unknown" },
+        "0.2.1-rc.1": { "install": "unknown", "start": "unknown", "uninstall": "unknown", "rollback": "unknown" },
+        "0.2.1-rc.2": { "install": "unknown", "start": "unknown", "uninstall": "unknown", "rollback": "unknown" },
+        "0.2.2-rc.5": { "install": "unknown", "start": "unknown", "uninstall": "unknown", "rollback": "unknown" },
+        "0.2.3-alpha.1": { "install": "unknown", "start": "unknown", "uninstall": "unknown", "rollback": "unknown" },
+        "0.2.3-alpha.2": { "install": "unknown", "start": "unknown", "uninstall": "unknown", "rollback": "unknown" }
+      }
+    }
+  }
 }

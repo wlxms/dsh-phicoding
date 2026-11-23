@@ -11,6 +11,9 @@
   同一个脚本既是安装也是更新：它会比对内容指纹，没变化就什么都不做，有变化就整份替换。
   记录写在 <目标>/.installed.json。
 
+  本地开发想实时跟随工作区，用 link-copilot.ps1 做目录链接；链接安装会被本脚本拒绝覆盖，
+  先用 link-copilot.ps1 -Unlink 解除，再运行本脚本。
+
 .EXAMPLE
   irm https://raw.githubusercontent.com/wlxms/dsh-phicoding/main/install-copilot.ps1 | iex
 
@@ -37,6 +40,21 @@ $ErrorActionPreference = 'Stop'
 function Write-Step($message) { Write-Host "▸ $message" }
 function Write-Note($message) { Write-Host "  $message" -ForegroundColor DarkGray }
 
+# 链接安装（link-copilot.ps1）用的是 junction / 目录链接。删除目录链接时必须
+# 先解除链接，不能用 Remove-Item -Recurse 追进去删目标仓库的文件。
+function Remove-InstallEntry($path) {
+    if (-not (Test-Path $path)) { return }
+    $item = Get-Item $path -Force
+    if ($item.LinkType) {
+        & cmd /c rmdir "$path" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "解除链接失败：$path" }
+        Write-Note "解除链接 $path"
+        return
+    }
+    Remove-Item $path -Recurse -Force
+    Write-Note "删除 $path"
+}
+
 # 别用 -Home 作参数名：PowerShell 里那会和只读自动变量 $HOME 撞名。
 if (-not $Destination) {
     $Destination = if ($env:COPILOT_HOME) { $env:COPILOT_HOME } else { Join-Path $env:USERPROFILE '.copilot' }
@@ -51,14 +69,18 @@ if ($Uninstall) {
     foreach ($dir in @($skills, $sharedSkills)) {
         if (-not (Test-Path $dir)) { continue }
         Get-ChildItem $dir -Directory | Where-Object { $_.Name -like 'phicoding*' } | ForEach-Object {
-            Remove-Item $_.FullName -Recurse -Force
-            Write-Note "删除 $($_.FullName)"
+            Remove-InstallEntry $_.FullName
         }
     }
-    if (Test-Path $checker) { Remove-Item $checker -Recurse -Force; Write-Note "删除 $checker" }
+    if (Test-Path $checker) { Remove-InstallEntry $checker }
     if (Test-Path $manifestPath) { Remove-Item $manifestPath -Force; Write-Note "删除 $manifestPath" }
     Write-Host '已卸载。' -ForegroundColor Green
     return
+}
+
+$existingManifest = if (Test-Path $manifestPath) { Get-Content $manifestPath -Raw | ConvertFrom-Json } else { $null }
+if ($existingManifest -and $existingManifest.mode -eq 'link') {
+    throw '当前 Copilot 安装是软链模式（link-copilot.ps1）。请先运行 .\link-copilot.ps1 -Unlink，再运行本脚本。'
 }
 
 $node = Get-Command node -ErrorAction SilentlyContinue

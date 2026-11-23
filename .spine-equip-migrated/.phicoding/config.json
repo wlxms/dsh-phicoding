@@ -1,0 +1,11 @@
+{
+  "_说明": "迁移后的模块工程：模块在 src/Spine.Equip，Load 与 check 是模块外边界。",
+  "trunk": "src/Spine.Equip/",
+  "variants": [
+    "src/Spine.Equip.Load/",
+    "check/"
+  ],
+  "trunkComments": "formatted",
+  "author": "Administrator",
+  "plan": "MIGRATION.md"
+}

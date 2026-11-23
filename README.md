@@ -1,6 +1,6 @@
 # dsh-phicoding · Philosophy Coding
 
-把一套**自有的编码哲学**做成可强制执行的形态：**6 个常驻技能**（软性）+ **一个硬性检查器**（11 条规则）。
+把一套**自有的编码哲学**做成可强制执行的形态：**6 个常驻技能**（软性）+ **一个硬性检查器**（12 条语言级规则 + 项目自带规则）。
 
 不是文档，是**闸**——规则要么能被机器判定，要么就得先证明它判不了。
 
@@ -9,7 +9,7 @@
 | 层 | 是什么 | 在哪 |
 | --- | --- | --- |
 | **软性** | 6 个技能，常驻（每个会话都在） | [`dsh-plugins/dsh-phicoding/skills/`](dsh-plugins/dsh-phicoding/skills) |
-| **硬性** | 一条命令跑 11 条规则，不通过就不通过 | [`dsh-plugins/dsh-phicoding/checks/`](dsh-plugins/dsh-phicoding/checks) |
+| **硬性** | 一条命令跑 12 条语言级规则 + 项目自带规则，不通过就不通过 | [`dsh-plugins/dsh-phicoding/checks/`](dsh-plugins/dsh-phicoding/checks) |
 
 ## 装进 VS Code Copilot（全局，一条命令）
 
@@ -39,6 +39,27 @@ curl -fsSL https://raw.githubusercontent.com/wlxms/dsh-phicoding/main/install-co
 
 `~/.copilot/.installed.json` 记录了装的是哪个指纹、什么时候装的。
 
+### 本地开发：让 Copilot 跟随当前工作区
+
+上面的安装是“构建后复制”的快照；要让 Copilot 实时看到**当前工作区**（包括未提交的
+技能 / 规则改动），用链接模式：
+
+```powershell
+pwsh -NoProfile -File .\link-copilot.ps1
+```
+
+Windows 创建符号链接通常需要管理员权限，脚本用 **junction（目录重解析点）** 做等价链接；
+它会把 `~/.copilot/skills/phicoding*` 和 `~/.copilot/phicoding` 指到本仓库的
+`dsh-plugins/dsh-phicoding`。已有的真实安装先备份到
+`~/.copilot/backup-before-link-<时间>/`，可手工回滚。
+
+```powershell
+pwsh -NoProfile -File .\link-copilot.ps1 -Unlink   # 解除链接，真实安装与备份不动
+```
+
+链接模式下 `install-copilot.ps1` 会拒绝覆盖（避免追进链接删到仓库文件）；要回到普通
+安装，先 `link-copilot.ps1 -Unlink`，再跑 `install-copilot.ps1`。
+
 装完之后在 Copilot Chat 里说「按 phicoding 设计这个功能」它会自动加载对应技能，也可以敲 `/phicoding`、
 `/phicoding-check`。检查器：
 
@@ -51,7 +72,7 @@ node "$env:USERPROFILE\.copilot\phicoding\checks\phicoding.mjs" --root <你的�
 ## 快速开始（仓库内）
 
 ```powershell
-# 结构检查（8 条语言级 + 项目自己的 3 条）
+# 结构检查（12 条语言级 + 项目自己的 3 条）
 node dsh-plugins/dsh-phicoding/checks/phicoding.mjs --root .spine-game
 
 # 列出规则（从目录扫，不手写清单）
@@ -101,15 +122,17 @@ node dsh-plugins/dsh-phicoding/checks/phicoding.mjs --list
 
 ```
 dsh-plugins/dsh-phicoding/      插件本体（技能 + 检查器）
-dsh-plugins/dsh-design-skills/  前身包，保留作对照
 .spine-game/                    验证载体①：DND 式中国风 MUD 文字游戏
 .spine-equip/                   验证载体②：装备系统 v3
+.spine-equip-migrated/          迁移样本：.spine-equip 按接口模块手册迁移（行为 137/137，0900–0930 全绿）
 .spine-test/                    验证载体③：buff 系统（第一次验证）
 spine-framework.png             框架图
 spine-game-classes.png          抽象方案类图
 ```
 
 三个验证载体都是**真实跑通**的工程，不是示意代码——它们是这套体系的效果证据。
+`.spine-equip-migrated` 不是第四个载体，是 `.spine-equip` 的接口模块迁移版；
+前后对照与验证记录见 [.spine-equip-migrated/MIGRATION.md](.spine-equip-migrated/MIGRATION.md)。
 
 ## 文档
 
@@ -117,6 +140,10 @@ spine-game-classes.png          抽象方案类图
 | --- | --- |
 | [RECOVERY.md](RECOVERY.md) | 产物被清空后如何从会话记录重放恢复，以及逐字节保真依据 |
 | [phicoding-interface-root.md](phicoding-interface-root.md) | 接口根：新根推翻了哪四条旧条文、两个项目的红点、两处声明的不完整 |
+| [phicoding-interface-modules.md](phicoding-interface-modules.md) | 接口模块：目录分层（Interfaces/Models/概念实现）、聚合根与组合根、硬检查与软审口径（H1–H4a 已落） |
+| [phicoding-interface-modules-handbook.md](phicoding-interface-modules-handbook.md) | 接口模块落地执行手册：迁移顺序、命令、常见红与改法、验收清单 |
+| [DSH-STORE.md](DSH-STORE.md) | DSH Store 提交说明：monorepo 显式包路径、精确兼容声明、一次性 Profile 验收 |
+| [.spine-equip-migrated/MIGRATION.md](.spine-equip-migrated/MIGRATION.md) | 迁移样本记录：`.spine-equip` 的目录前后对照、行为 137/137、0900–0930 全绿、保留的软审项 |
 | [checks/README.md](dsh-plugins/dsh-phicoding/checks/README.md) | 面向检查器维护者：底座与规则的分工、加规则/加语言各改哪、四条戒律 |
 | [.spine-game/PLAN.md](.spine-game/PLAN.md) | 那个游戏在被验证时被哲学法官三轮打回的全过程 |
 
@@ -126,3 +153,7 @@ spine-game-classes.png          抽象方案类图
 - 规则 `0700-abstract-has-interface` 在两个载体上都是红的（两者都写于该根之前，`.cs` 里零接口）
 - 「接口有没有覆盖抽象的**完整**抽象面」机器判不了，归软审查
 - 两个彼此无关、也没有继承关系的类型之间，那条依赖该不该有 —— 只取决于设计意图，检查器不判，归哲学法官
+- 接口模块的目录分层：H1–H4a 已机械化（`0900`–`0930`，用例 `checks/layout.test.mjs`）；
+  H4b–H4d / H5 / H6 仍归软审。delegate 不在底座 facts 里，数据原子/引用里的 delegate 判不了
+  （见 [phicoding-interface-modules.md](phicoding-interface-modules.md) 与
+  [handbook](phicoding-interface-modules-handbook.md)）

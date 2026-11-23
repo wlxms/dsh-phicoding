@@ -80,7 +80,7 @@ profile 组装也被那次修复重置了——`profiles/web/package.json` 的 `
 | --- | --- |
 | 1 | 删掉断链，改建 junction：`profiles/web/node_modules/dsh-phicoding` → `H:\Git\dsh-mydsh\dsh-plugins\dsh-phicoding`（绝对目标） |
 | 2 | `package.json` 的 `dependencies` 加 `"dsh-phicoding": "link:H:/Git/dsh-mydsh/dsh-plugins/dsh-phicoding"` |
-| 3 | `package.json` 的 `dsh.profile.bundles` 加 `dsh-phicoding`（放在 `@deepseek-ai/dsh-web-app` 之后，与当年 `dsh-design-skills` 的位置一致） |
+| 3 | `package.json` 的 `dsh.profile.bundles` 加 `dsh-phicoding`（放在 `@deepseek-ai/dsh-web-app` 之后） |
 
 **当场生效**（`patchReload: live`，无需重启）：本会话的技能目录随即多出 6 个 `phicoding*`，
 且 `phicoding-check` 的描述是「另含**十条红线**」——正是接口那次改后的新文案，证明 runtime 读的
@@ -88,8 +88,8 @@ profile 组装也被那次修复重置了——`profiles/web/package.json` 的 `
 
 改动前整个 profile 已备份到 `.backups/profile-web-pre-install-20261012-171814\`。
 
-**一处仍未对齐**：`pnpm-lock.yaml` 里没有 `dsh-phicoding` 这条 `link:` 记录（当年的
-`dsh-design-skills` 是有的）。这个文件被运行中的进程以「可读不可写」占用着，改不动。
+**一处仍未对齐**：`pnpm-lock.yaml` 里没有 `dsh-phicoding` 这条 `link:` 记录。
+这个文件被运行中的进程以「可读不可写」占用着，改不动。
 它只影响将来的 pnpm 操作，**不影响 runtime**。要在普通终端里把它补成官方形态，跑一次：
 
 ```powershell

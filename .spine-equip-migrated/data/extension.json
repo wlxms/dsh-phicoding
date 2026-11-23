@@ -1,0 +1,14 @@
+{
+  "items": [
+    { "id": "oak-wand", "kind": "wand", "mods": [ { "stat": "focus", "add": 7 } ] },
+    { "id": "plain-blade", "kind": "sword", "mods": [ { "stat": "attack", "add": 3 } ] },
+    { "id": "novice-blade", "kind": "sword", "requires": [ { "level_max": 5 } ], "mods": [ { "stat": "attack", "add": 1 } ] },
+    { "id": "scout-vest", "kind": "plate", "mods": [ { "stat": "defense", "add": 4 } ] },
+    { "id": "jade-ring", "kind": "ring", "mods": [ { "stat": "defense", "add": 2 } ] },
+    { "id": "bone-ring", "kind": "ring", "mods": [ { "stat": "defense", "add": 3 } ] }
+  ],
+  "characters": [
+    { "id": "scout", "level": 3, "job": "mage", "slots": [ "offhand", "weapon" ], "basis": { "attack": 5 } },
+    { "id": "keeper", "level": 4, "job": "mage", "slots": [ "trinket", "relic" ], "basis": { "defense": 2 } }
+  ]
+}

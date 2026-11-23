@@ -1,0 +1,34 @@
+{
+  "sets": [
+    {
+      "id": "iron",
+      "pieces": 3,
+      "mods": [
+        { "stat": "defense", "add": 8 },
+        { "stat": "attack", "mul": 1.2 }
+      ]
+    },
+    { "id": "iron", "pieces": 9, "mods": [ { "stat": "attack", "add": 999 } ] }
+  ],
+  "items": [
+    { "id": "steel-sword", "kind": "sword", "mods": [ { "stat": "attack", "add": 12 } ] },
+    { "id": "iron-sword", "kind": "sword", "set": "iron", "requires": [ { "level_min": 3 } ], "mods": [ { "stat": "attack", "add": 8 } ] },
+    { "id": "iron-plate", "kind": "plate", "set": "iron", "requires": [ { "class": "warrior" } ], "mods": [ { "stat": "defense", "add": 10 } ] },
+    { "id": "iron-ring", "kind": "ring", "set": "iron", "mods": [ { "stat": "defense", "add": 2 } ] },
+    { "id": "grand-ring", "kind": "ring", "requires": [ { "level_min": 9 } ], "mods": [ { "stat": "attack", "mul": 1.1 } ] },
+    { "id": "mage-robe", "kind": "robe", "requires": [ { "class": "mage" } ], "mods": [ { "stat": "defense", "add": 3 } ] },
+
+    { "id": "ghost-blade", "kind": "halberd", "mods": [ { "stat": "attack", "add": 99 } ] },
+    { "id": "steel-sword", "kind": "sword", "mods": [ { "stat": "attack", "add": 77 } ] },
+    { "id": "orphan-ring", "kind": "ring", "set": "mithril", "mods": [ { "stat": "defense", "add": 99 } ] },
+    { "id": "cursed-ring", "kind": "ring", "requires": [ { "soul_bound": true } ], "mods": [ { "stat": "defense", "add": 99 } ] },
+    { "id": "broken-ring", "kind": "ring", "mods": [ { "stat": "attack", "add": "many" } ] },
+    { "id": "odd-ring", "kind": "ring", "set": 5, "mods": [ { "stat": "defense", "add": 99 } ] },
+    { "id": "lucky-charm", "kind": "ring", "mods": [ { "stat": "luck", "add": 5 } ] }
+  ],
+  "characters": [
+    { "id": "hero", "level": 7, "job": "warrior", "slots": [ "weapon", "armor", "trinket" ], "basis": { "attack": 10, "defense": 5 } },
+    { "id": "mage", "level": 9, "job": "mage", "slots": [ "weapon", "armor", "trinket" ], "basis": { "attack": 6, "defense": 4 } },
+    { "id": "ghost", "level": 5, "job": "warrior", "slots": [ "weapon" ], "basis": { "attack": 5, "luck": 3 } }
+  ]
+}

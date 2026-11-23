@@ -31,6 +31,17 @@ dsh plugin --profile web add H:\Git\dsh-mydsh\.recovery-tmp\stage\plugins\dsh-ph
 
 宿主行注册进 `ctx.skills` 的**全局层**，所以每个 agent preset 的作用域链都会合并这批技能——这就是「常驻」的机制保证，不需要任何用户配置。
 
+## DSH Store
+
+本包在仓库子目录 `dsh-plugins/dsh-phicoding`；仓库根没有 `package.json`，
+提交 DSH Store 时必须使用显式路径：
+
+`https://github.com/wlxms/dsh-phicoding/tree/main/dsh-plugins/dsh-phicoding`
+
+`package.json` 已声明精确的 `dsh.compatibility.dshReleases` 与 `dshOperations`
+（后者在真实一次性 Profile 验收前保持 `unknown`）。提交步骤与验收命令见
+[DSH-STORE.md](../../DSH-STORE.md)。
+
 ## 验证
 
 ```sh

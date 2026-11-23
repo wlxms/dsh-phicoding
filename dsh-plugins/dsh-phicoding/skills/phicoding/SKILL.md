@@ -93,6 +93,7 @@ description: 编码与设计的总准则。任何写代码、改代码、评审�
 | 你现在要做的事 | 加载 |
 | --- | --- |
 | 设计框架 / 抽象 / 分层 / 决定该不该抽 / config 与类型的分工 / 装载报错策略 / 新增一个解释要写几处 | `phicoding-design` |
+| 落地模块目录：`Interfaces/` / `Models/` / 概念实现目录 / 聚合根 / 组合根 / 多接口落点 | `phicoding-design` 的「接口模块目录」+ `phicoding-check` 的模块软审 |
 | 判断谁能看谁、注入太深、底层要依赖上层 | `phicoding-level` |
 | 写注册表 / 事件 / 管线 / 管理器 | `phicoding-shape` |
 | Unity 组件与生命周期 | `phicoding-unity` |
