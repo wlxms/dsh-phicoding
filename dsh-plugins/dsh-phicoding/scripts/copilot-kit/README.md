@@ -11,7 +11,7 @@
 | 路径 | 进 Copilot 的方式 |
 | --- | --- |
 | `.github/skills/` | **Agent Skills**（开放标准，与 Copilot CLI / coding agent 通用）。VS Code 按需自动加载，也能 `/phicoding` 手动调 |
-| `.github/copilot-instructions.md` | 常驻指令：写代码前加载技能、交付前跑检查器 |
+| `.github/copilot-instructions.md` | 强制契约：写代码前必须读技能，交付前必须跑完整检查器 |
 | `phicoding/checks/` | 检查器本体（Node + Roslyn 语法底座） |
 | `.vscode/tasks.json` | 一键跑检查（终端 → 运行任务） |
 

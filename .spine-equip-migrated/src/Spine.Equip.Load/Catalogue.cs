@@ -4,7 +4,6 @@ namespace Spine.Equip;
 
 public sealed class Catalogue
 {
-    // [Administrator 2026-11-18 waive=0750 why=plumbing] 装载边界：它必须同时认识接口与全部具体实现
     public Registry<ISlot> Slots { get; } = new();
 
     public Registry<IItemKind> Kinds { get; } = new();

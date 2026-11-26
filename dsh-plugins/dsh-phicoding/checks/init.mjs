@@ -105,7 +105,8 @@ export function detect(facts, root) {
     trunk: trunk.dir + '/',
     variants,
     trunkComments: 'formatted',
-    author: who.value
+    author: who.value,
+    profile: { mode: 'error' }
   }
   if (existsSync(join(root, 'PLAN.md'))) config.plan = 'PLAN.md'
 

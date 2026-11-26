@@ -2,13 +2,16 @@ using Spine.Equip;
 
 namespace Check;
 
-public sealed class OffHand : ISlot
+public interface IOffHandKind : IItemKind
 {
-    // [Administrator 2026-11-18 waive=0750 why=plumbing] 槽位要按自己的 kind 族做类型判断
-    public bool Takes(IItemKind kind) => kind is OffHandKind;
 }
 
-public abstract class OffHandKind : IItemKind
+public sealed class OffHand : ISlot
+{
+    public bool Takes(IItemKind kind) => kind is IOffHandKind;
+}
+
+public abstract class OffHandKind : IOffHandKind
 {
 }
 
@@ -18,8 +21,7 @@ public sealed class Wand : OffHandKind
 
 public sealed class Relic : ISlot
 {
-    // [Administrator 2026-11-18 waive=0750 why=plumbing] 槽位要按自己的 kind 族做类型判断
-    public bool Takes(IItemKind kind) => kind is TrinketKind;
+    public bool Takes(IItemKind kind) => kind is ITrinketKind;
 }
 
 public sealed class Focus : IStat

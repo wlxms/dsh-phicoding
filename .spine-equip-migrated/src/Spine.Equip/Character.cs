@@ -1,12 +1,14 @@
 using System.Collections.ObjectModel;
+using Spine.Equip.Config;
 
 namespace Spine.Equip;
 
-public sealed class Character
+public sealed class Character : ICharacter
 {
-    private readonly Dictionary<ISlot, Item?> worn = new();
+    private readonly Dictionary<ISlot, IItem?> worn = new();
     private readonly List<KeyValuePair<IStat, float>> basis = new();
-    private readonly ReadOnlyDictionary<ISlot, Item?> view;
+    private readonly ReadOnlyDictionary<ISlot, IItem?> view;
+    private readonly IStatsMutable stats;
 
     public Character(int level, IJob job, IEnumerable<ISlot> slots, IEnumerable<KeyValuePair<IStat, float>> basis)
     {
@@ -14,8 +16,8 @@ public sealed class Character
         Job = job;
         this.basis.AddRange(basis);
         foreach (var slot in slots) worn.Add(slot, null);
-        view = new ReadOnlyDictionary<ISlot, Item?>(worn);
-        Stats = new Stats();
+        view = new ReadOnlyDictionary<ISlot, IItem?>(worn);
+        stats = new Stats();
         Rebuild();
     }
 
@@ -25,16 +27,16 @@ public sealed class Character
 
     public bool Dead { get; private set; }
 
-    public Stats Stats { get; }
+    public IStats Stats => stats;
 
-    public IReadOnlyDictionary<ISlot, Item?> Slots => view;
+    public IReadOnlyDictionary<ISlot, IItem?> Slots => view;
 
-    public bool Equip(Item item)
+    public bool Equip(IItem item)
     {
         if (Dead) return false;
         if (item.Destroyed) return false;
         if (item.Held) return false;
-        var wearer = new Wearer(Level, Job);
+        var wearer = new Wearer(Level, Job.GetType());
         foreach (var requirement in item.Requires)
         {
             if (!requirement.Met(wearer)) return false;
@@ -43,7 +45,7 @@ public sealed class Character
         if (slot == null) return false;
         Clear(slot);
         worn[slot] = item;
-        item.unbind = () => Remove(item);
+        item.Bind(() => Remove(item));
         Rebuild();
         return true;
     }
@@ -64,14 +66,14 @@ public sealed class Character
         return Unequip(slot);
     }
 
-    public Item? Worn<T>() where T : ISlot
+    public IItem? Worn<T>() where T : ISlot
     {
         var slot = FindSlot<T>();
         if (slot == null) return null;
         return worn[slot];
     }
 
-    public bool Active(Set set) => Count(set) >= set.Pieces;
+    public bool Active(SetDto set) => Count(set) >= set.Pieces;
 
     public void Die()
     {
@@ -89,11 +91,11 @@ public sealed class Character
     {
         var item = worn[slot];
         if (item == null) return;
-        item.unbind = null;
+        item.Unbind();
         worn[slot] = null;
     }
 
-    private void Remove(Item item)
+    private void Remove(IItem item)
     {
         foreach (var slot in worn.Keys)
         {
@@ -125,7 +127,7 @@ public sealed class Character
         return null;
     }
 
-    private int Count(Set set)
+    private int Count(SetDto set)
     {
         var count = 0;
         foreach (var item in worn.Values)
@@ -137,22 +139,22 @@ public sealed class Character
 
     private void Rebuild()
     {
-        Stats.Reset(basis);
+        stats.Reset(basis);
         foreach (var item in worn.Values)
         {
             if (item == null) continue;
-            Stats.Apply(item.Mods);
+            stats.Apply(item.Mods);
         }
         foreach (var set in WornSets())
         {
             if (!Active(set)) continue;
-            Stats.Apply(set.Mods);
+            stats.Apply(set.Mods.Select(mod => new Mod(mod.Stat, mod.Add, mod.Mul)).ToList());
         }
     }
 
-    private List<Set> WornSets()
+    private List<SetDto> WornSets()
     {
-        var sets = new List<Set>();
+        var sets = new List<SetDto>();
         foreach (var item in worn.Values)
         {
             var set = item?.Set;

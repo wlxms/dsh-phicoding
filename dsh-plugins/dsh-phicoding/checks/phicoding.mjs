@@ -19,13 +19,14 @@
 // Usage:
 //   phicoding --root <dir> [--only <id>] [--list] [--init] [--json]
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, extname, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as scope from './scope.mjs'
 import * as init from './init.mjs'
+import * as tiers from './tiers.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const SKIP = new Set(['bin', 'obj', 'node_modules', '.git', '.build'])
@@ -99,19 +100,41 @@ async function filesWithExt(dir, ext, out = []) {
 }
 
 // ---- rules -----------------------------------------------------------------
-// name = <4-digit priority>-<rule name>.<any>. Order comes from the file name,
-// so inserting a rule never means renumbering or editing anything else.
+// name = <family>-<number>-<rule name>.<any> or <4-digit>-<rule name>.<any>.
+// Rules may live in family subdirectories (contract/, dependency/, ...). Order is
+// still derived from the path, so inserting a rule never edits a list.
+async function walkRules(dir, local, found, base = dir) {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (SKIP.has(entry.name)) continue
+    if (!entry.isFile()) {
+      if (entry.isDirectory()) await walkRules(join(dir, entry.name), local, found, base)
+      continue
+    }
+    if (!/^(?:META|PROFILE|SOFT)_[A-Z0-9_]+_\d{2}\.(mjs|js|sh|cmd|exe|py)$/.test(entry.name)) continue
+    const path = join(dir, entry.name)
+    found.push({
+      id: entry.name.replace(/\.[^.]+$/, ''),
+      path,
+      file: relative(base, path).replaceAll('\\', '/'),
+      local
+    })
+  }
+}
+
 async function rulesOf(langDir, extraDir) {
   const found = []
   for (const [dir, local] of [[langDir, false], [extraDir, true]]) {
     if (!dir || !existsSync(dir)) continue
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
-      if (!entry.isFile()) continue
-      if (!/^\d{4}-.+\.(mjs|js|sh|cmd|exe|py)$/.test(entry.name)) continue
-      found.push({ id: entry.name.replace(/\.[^.]+$/, ''), path: join(dir, entry.name), file: entry.name, local })
-    }
+    await walkRules(dir, local, found)
   }
-  return found.sort((a, b) => a.file.localeCompare(b.file))
+  const familyOrder = ['form', 'contract', 'dependency', 'module']
+  return found.sort((a, b) => {
+    const familyA = a.file.split('/')[1] ?? ''
+    const familyB = b.file.split('/')[1] ?? ''
+    const order = familyOrder.indexOf(familyA) - familyOrder.indexOf(familyB)
+    if (order !== 0) return order
+    return a.id.localeCompare(b.id)
+  })
 }
 
 // A project's own rules live with the project: they encode choices that belong
@@ -119,11 +142,12 @@ async function rulesOf(langDir, extraDir) {
 // be wrong imposed on every other project.
 const localRules = join(root, '.phicoding', 'rules')
 
-function runRule(rule, factsPath, toolsDir, runRoot) {
+function runRule(rule, factsPath, toolsDir, runRoot, changedPath) {
   const ext = extname(rule.path).toLowerCase()
   // --rules points at the language's rule directory, so a project rule can check
   // that the rule it names actually exists instead of trusting a hand-kept list.
   const common = ['--facts', factsPath, '--config', configPath, '--rules', toolsDir, '--root', runRoot]
+  if (changedPath) common.push('--changed', changedPath)
   const launched = ext === '.mjs' || ext === '.js'
     ? ['node', [rule.path, ...common]]
     : ext === '.sh'
@@ -148,7 +172,12 @@ async function ensureBase(langDir) {
   const factsDir = join(langDir, 'facts')
   const buildDir = join(langDir, '.build')
   const dll = join(buildDir, 'Facts.dll')
-  if (existsSync(dll)) return dll
+  const source = join(factsDir, 'Program.cs')
+  // A stale binary silently keeps judging the previous fact schema. Rebuild when
+  // the source is newer than the binary; a checker that quietly runs old facts is
+  // the same failure as a checker that sees nothing.
+  const stale = existsSync(dll) && existsSync(source) && statSync(source).mtimeMs > statSync(dll).mtimeMs
+  if (existsSync(dll) && !stale) return dll
 
   if (!existsSync(join(factsDir, 'Facts.csproj'))) {
     throw new Error(`没有底座：${relative(here, factsDir)} 里找不到 Facts.csproj`)
@@ -194,8 +223,21 @@ const langDirs = await languages()
 if (wantList) {
   for (const lang of langDirs) {
     console.log(`${lang.ext}/`)
-    for (const rule of await rulesOf(lang.dir, localRules)) {
-      console.log(`  ${rule.id}${rule.local ? '   (项目)' : ''}`)
+    const all = await rulesOf(lang.dir, localRules)
+    for (let index = 0; index < tiers.META_STAGES.length; index++) {
+      const stage = tiers.META_STAGES[index]
+      console.log(`  META ${index + 1}/6 ${stage.label}`)
+      for (const rule of tiers.stageRules(all, index)) {
+        console.log(`    ${rule.id}${rule.local ? '   (项目)' : ''}`)
+      }
+    }
+    console.log('  PROFILE 项目风格')
+    for (const rule of tiers.profileRules(all)) {
+      console.log(`    ${rule.id}${rule.local ? '   (项目)' : ''}`)
+    }
+    console.log('  SOFT 设计审查')
+    for (const rule of tiers.softRules(all)) {
+      console.log(`    ${rule.id}${rule.local ? '   (项目)' : ''}`)
     }
   }
   process.exit(0)
@@ -212,7 +254,7 @@ if (active.length === 0) {
   process.exit(2)
 }
 
-const report = { root, languages: [], failed: 0, soft: 0, grey: 0, skipped: 0 }
+const report = { root, languages: [], failed: 0, soft: 0, grey: 0, skipped: 0, warn: 0, blocked: 0, unknown: 0 }
 
 // ---- findings and scope ----------------------------------------------------
 // A rule prints one finding per line. Every `path:line` inside the line is one of
@@ -256,6 +298,133 @@ function classify(result, mine, other) {
     ;(otherHit ? grey : soft).push(line)
   }
   return { red, grey, soft }
+}
+
+// One rule result, interpreted by its tier. Meta failures block the rest of the
+// pipeline; profile findings are warnings unless the project raises them to
+// errors; soft findings never block.
+function emitTieredResult(result, tier, profileMode) {
+  const heading = tier === 'meta' ? 'RED' : tier === 'profile' ? 'RED' : 'soft'
+  if (result.ok) {
+    console.log(`   green ${result.id}`)
+    if (result.output) for (const line of result.output.split('\n')) console.log(`           ${line}`)
+    return 'pass'
+  }
+  if (result.skipped) {
+    console.log(`   skip  ${result.id}   ${firstLine(result.output)}`)
+    report.skipped++
+    return 'skip'
+  }
+
+  const scoped = wantDiff ? classify(result, mine, other) : { red: (result.output ?? '').split('\n').filter((line) => line.trim()), grey: [], soft: [] }
+  const broke = scoped.red.length === 0 && scoped.grey.length === 0 && scoped.soft.length === 0
+  if (tier === 'soft') {
+    const findings = scoped.red.length + scoped.grey.length + scoped.soft.length
+    console.log(`   soft  ${result.id}   ${findings || 0} 处（设计审查，未挡）`)
+    for (const line of [...scoped.red, ...scoped.grey, ...scoped.soft]) console.log(`           ${line}`)
+    report.soft += findings
+    return 'pass'
+  }
+
+  if (scoped.red.length === 0 && scoped.grey.length > 0) {
+    console.log(`   grey  ${result.id}   ${scoped.grey.length} 处（改过但不在本会话的账里，未挡）`)
+    for (const line of scoped.grey) console.log(`           ${line}`)
+    report.grey += scoped.grey.length
+    return 'pass'
+  }
+  if (scoped.red.length === 0 && scoped.soft.length > 0) {
+    console.log(`   soft  ${result.id}   ${scoped.soft.length} 处（改动范围外，未挡）`)
+    report.soft += scoped.soft.length
+    return 'pass'
+  }
+
+  const findings = scoped.red.length
+  const failing = findings > 0 || broke
+  if (tier === 'profile' && profileMode !== 'error') {
+    console.log(`   WARN  ${result.id}   ${failing ? `${findings} 处（profile=warn，未挡）` : '（profile 未挡）'}`)
+    for (const line of scoped.red) console.log(`           ${line}`)
+    report.warn += findings
+    return 'pass'
+  }
+
+  console.log(`   ${heading.toUpperCase()} ${result.id}   ${broke ? '（没有产出任何可定位的 finding）' : `${findings} 处`}`)
+  for (const line of scoped.red) console.log(`           ${line}`)
+  if (result.error) {
+    const brief = result.error.split('\n')
+    for (const line of brief.slice(0, 8)) console.log(`           ! ${line}`)
+    if (brief.length > 8) console.log('           ! …')
+  }
+  report.failed++
+  return 'fail'
+}
+
+async function runProgressive({ rules, profileMode, profileEnabled, factsPath, lang, entry, changedPath }) {
+  let blocked = false
+
+  for (let index = 0; index < tiers.META_STAGES.length; index++) {
+    const stage = tiers.META_STAGES[index]
+    const stageRules = tiers.stageRules(rules, index)
+    if (blocked) {
+      for (const rule of stageRules) {
+        console.log(`   BLOCKED  META ${index + 1}/6 ${stage.label}   ${rule.id}`)
+        report.blocked++
+      }
+      continue
+    }
+    console.log(`   META  ${index + 1}/6  ${stage.label}`)
+    let anyPass = false
+    let stageFailed = false
+    for (const rule of stageRules) {
+      const result = runRule(rule, factsPath, lang.dir, root, changedPath)
+      entry.rules.push({ ...result, tier: 'meta', stage: index + 1 })
+      const status = emitTieredResult(result, 'meta', profileMode)
+      if (status === 'pass') anyPass = true
+      if (status === 'fail') stageFailed = true
+    }
+    if (stageFailed) {
+      blocked = true
+      continue
+    }
+    if (!anyPass) {
+      console.log(`   UNKNOWN  META ${index + 1}/6 ${stage.label}   （全部未判，不算通过）`)
+      report.unknown++
+      report.failed++
+      blocked = true
+    }
+  }
+
+  if (blocked) {
+    for (const tier of ['profile', 'soft']) {
+      const label = tier === 'profile' ? 'PROFILE' : 'SOFT'
+      console.log(`   BLOCKED  ${label}   （前序元规则未通过）`)
+      report.blocked++
+    }
+    return
+  }
+
+  const profileRules = tiers.profileRules(rules)
+  if (!profileEnabled) {
+    console.log('   PROFILE 已关闭（profile.enabled=false）')
+  } else if (profileRules.length === 0) {
+    console.log('   PROFILE 没有规则')
+  } else {
+    console.log('   PROFILE 项目风格')
+    for (const rule of profileRules) {
+      const result = runRule(rule, factsPath, lang.dir, root, changedPath)
+      entry.rules.push({ ...result, tier: 'profile' })
+      emitTieredResult(result, 'profile', profileMode)
+    }
+  }
+
+  const softRules = tiers.softRules(rules)
+  if (softRules.length > 0) {
+    console.log('   SOFT 设计审查')
+    for (const rule of softRules) {
+      const result = runRule(rule, factsPath, lang.dir, root, changedPath)
+      entry.rules.push({ ...result, tier: 'soft' })
+      emitTieredResult(result, 'soft', profileMode)
+    }
+  }
 }
 
 let mine
@@ -350,11 +519,50 @@ for (const lang of active) {
     }
   }
 
-  const all = await rulesOf(lang.dir, localRules)
-  const chosen = only ? all.filter((r) => r.id.includes(only)) : all
+const all = await rulesOf(lang.dir, localRules)
+const onlyWanted = only ? tiers.resolveRuleId(only) : undefined
+const chosen = onlyWanted ? all.filter((r) => r.id.includes(onlyWanted)) : all
+
+  let projectConfig = {}
+  try {
+    projectConfig = JSON.parse(await readFile(configPath, 'utf8'))
+  } catch {
+    // A missing or malformed config is not silently a pass: rules that need it
+    // already report their own configuration errors. The tier policy defaults
+    // to warning for profile rules.
+  }
+  const profileSettings = projectConfig.profile ?? {}
+  const profileMode = projectConfig.profileMode === 'warn' || profileSettings.mode === 'warn' ? 'warn' : 'error'
+  const profileEnabled = profileSettings.enabled !== false
+
+  // Rules may infer module roots from the files under review when a project has
+  // no Interfaces/ yet. Pass only this session's claimed changes: the rest of the
+  // old tree must not turn into a module graph and flood the report.
+  let changedPath
+  if (wantDiff) {
+    changedPath = join(dir, 'changed.json')
+    await writeFile(changedPath, JSON.stringify([...mine.keys()]), 'utf8')
+  }
+
+  // A full run is progressive: meta stages run in order and a failed stage
+  // blocks the rest. `--only` stays a flat, direct rule probe.
+  if (!only) {
+    await runProgressive({
+      rules: all,
+      profileMode,
+      profileEnabled,
+      factsPath,
+      lang,
+      entry,
+      changedPath
+    })
+    await rm(dir, { recursive: true, force: true })
+    report.languages.push(entry)
+    continue
+  }
 
   for (const rule of chosen) {
-    const result = runRule(rule, factsPath, lang.dir, root)
+    const result = runRule(rule, factsPath, lang.dir, root, changedPath)
     entry.rules.push(result)
 
     if (wantDiff) {
@@ -430,7 +638,12 @@ if (wantJson) console.log(JSON.stringify(report, null, 2))
 console.log('')
 // A skipped rule judged nothing. It must never be folded into a plain OK, or the
 // summary would claim coverage the run did not have.
-const tail = report.skipped > 0 ? `  跳过 ${report.skipped} 条（可选输入缺失，不算通过）` : ''
+const tailParts = []
+if (report.skipped > 0) tailParts.push(`跳过 ${report.skipped} 条（可选输入缺失，不算通过）`)
+if (report.warn > 0) tailParts.push(`WARN ${report.warn} 处（profile 未挡）`)
+if (report.blocked > 0) tailParts.push(`BLOCKED ${report.blocked} 条（前序元规则失败）`)
+if (report.unknown > 0) tailParts.push(`UNKNOWN ${report.unknown} 个阶段`)
+const tail = tailParts.length > 0 ? `  ${tailParts.join(' · ')}` : ''
 if (wantDiff) {
   // A scoped pass and a strict pass mean different things. Printing the same line
   // for both would turn "nothing changed" into "compliant" - the exact silent

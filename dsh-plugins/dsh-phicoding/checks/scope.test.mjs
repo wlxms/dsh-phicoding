@@ -89,10 +89,10 @@ console.log(`fixture: ${fixture}\n`)
   const probe = join(dir, 'Core', 'Adjust.cs')
   await edit(probe, 'public override int Of(Sheet sheet) => amount;', 'public override int Of(Sheet sheet) => amount * 1;')
 
-  // 0700 的 finding 在 Adjust.cs 第 3 行，改的是第 10 行。文件粒度会把第 3 行
+  // META_SURFACE_02 的 finding 在 Adjust.cs 第 3 行，改的是第 10 行。文件粒度会把第 3 行
   // 一起算成"本次改动"，行粒度不会。这条就是判"轴选错了"的探针。
   const r = run({ root: dir, args: ['--diff'], env })
-  const pulled = /RED\s+0700/.test(r.out)
+  const pulled = /RED\s+META_SURFACE_02/.test(r.out)
   expect('行级精度 → 改第10行不把第3行的旧债算成本次改动', !pulled, r.out.slice(-600))
   expect('行级精度 → 该次改动仍判 OK', r.status === 0, r.out.slice(-200))
   await rm(dir, { recursive: true, force: true })
@@ -112,7 +112,7 @@ console.log(`fixture: ${fixture}\n`)
   )
 
   const r = run({ root: dir, args: ['--diff'], env })
-  expect('改动范围内新增 else → 拦（exit 1，且 RED 点名 0100）', r.status === 1 && /RED\s+0100-no-else/.test(r.out), r.out.slice(-600))
+  expect('改动范围内新增 else → 拦（exit 1，且 RED 点名 PROFILE_STYLE_01）', r.status === 1 && /RED\s+PROFILE_STYLE_01/.test(r.out), r.out.slice(-600))
   await rm(dir, { recursive: true, force: true })
 }
 
@@ -127,11 +127,11 @@ console.log(`fixture: ${fixture}\n`)
   )
 
   const r = run({ root: dir, args: ['--diff'], env })
-  // 0700 红（新抽象没有接口）；0850 不红——等级是可选的设计笔记，新类型没登记
+  // META_SURFACE_02 红（新抽象没有接口）；0850 不红——等级是可选的设计笔记，新类型没登记
   // 等级不算违规，只让覆盖率往下走。这条断言就是这条契约的探针。
   expect(
-    '新文件 → 整文件入范围，0700 红但 0850 不红（等级是可选的）',
-    r.status === 1 && /RED\s+0700/.test(r.out) && !/RED\s+0850/.test(r.out),
+    '新文件 → 整文件入范围，META_SURFACE_02 红但 0850 不红（等级是可选的）',
+    r.status === 1 && /RED\s+META_SURFACE_02/.test(r.out) && !/RED\s+0850/.test(r.out),
     r.out.slice(-700),
   )
   await rm(dir, { recursive: true, force: true })
@@ -154,7 +154,7 @@ console.log(`fixture: ${fixture}\n`)
   )
 
   const r = run({ root: dir, args: ['--diff'], env })
-  expect('账外改动 → 归灰，不挡（exit 0）', r.status === 0 && /grey\s+0700/.test(r.out), r.out.slice(-700))
+  expect('账外改动 → 归灰，不挡（exit 0）', r.status === 0 && /grey\s+META_SURFACE_02/.test(r.out), r.out.slice(-700))
   expect('账外改动 → 摘要把"归我/归灰"分开报', /归我 0 · 归灰 1/.test(r.out), r.out.slice(-200))
   await rm(dir, { recursive: true, force: true })
 }

@@ -1,10 +1,12 @@
+using Spine.Equip.Config;
+
 namespace Spine.Equip;
 
-public sealed class Item
+public sealed class Item : IItem
 {
     internal Action? unbind;
 
-    public Item(IItemKind kind, IReadOnlyList<Mod> mods, IReadOnlyList<IRequirement> requires, Set? set)
+    public Item(IItemKind kind, IReadOnlyList<Mod> mods, IReadOnlyList<IRequirement> requires, SetDto? set)
     {
         Kind = kind;
         Mods = mods;
@@ -18,11 +20,15 @@ public sealed class Item
 
     public IReadOnlyList<IRequirement> Requires { get; }
 
-    public Set? Set { get; }
+    public SetDto? Set { get; }
 
     public bool Destroyed { get; private set; }
 
     public bool Held => unbind != null;
+
+    public void Bind(Action onDestroy) => unbind = onDestroy;
+
+    public void Unbind() => unbind = null;
 
     public void Destroy()
     {

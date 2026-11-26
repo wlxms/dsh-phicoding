@@ -1,12 +1,12 @@
 namespace Spine.Equip;
 
-public sealed class Scene
+public sealed class Scene : IScene
 {
-    private readonly List<Character> characters = new();
+    private readonly List<ICharacter> characters = new();
 
-    public IReadOnlyList<Character> Characters => characters;
+    public IReadOnlyList<ICharacter> Characters => characters;
 
-    public void Add(Character character) => characters.Add(character);
+    public void Add(ICharacter character) => characters.Add(character);
 
     public void Unload()
     {

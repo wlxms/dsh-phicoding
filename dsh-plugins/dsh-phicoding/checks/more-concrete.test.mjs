@@ -81,10 +81,10 @@ public sealed class A { public IRoot Any { get; set; } = null!; public Other Unr
     red: 0,
   },
   {
-    name: '工厂（同时引用抽象与全部具现）→ 全局判，不管它在哪个目录',
+    name: '全局判（同时引用抽象与全部具现）→ 红，不看它在哪个目录',
     layout: {
-      'Core/Types.cs': `${family}`,
-      'Data/Forge.cs': `namespace T;
+      'Core/Interfaces/Types.cs': `${family}`,
+      'Core/Forge.cs': `namespace T;
 
 public sealed class Forge
 {
@@ -96,12 +96,12 @@ public sealed class Forge
     red: 1,
   },
   {
-    name: '同一个工厂写了 waive=0750 → 放过，且摘要报告豁免',
+    name: 'META_REF_LEVEL_01 接受显式 waive',
     layout: {
-      'Core/Types.cs': `${family}`,
-      'Data/Forge.cs': `namespace T;
+      'Core/Interfaces/Types.cs': `${family}`,
+      'Core/Forge.cs': `namespace T;
 
-// [Administrator 2026-10-18 waive=0750 why=plumbing] 这是工厂，它必须认识全部具现
+// [Administrator 2026-10-18 waive=META_REF_LEVEL_01 why=plumbing] UE 只能按具体类型注册
 public sealed class Forge
 {
     public IRoot Any { get; set; } = null!;
@@ -113,10 +113,10 @@ public sealed class Forge
     expect: /豁免 1 个类型（plumbing 1）/,
   },
   {
-    name: '豁免只作用于写了它的那个类型 → 旁边那个仍违规',
+    name: 'waive 只放行写了它的类型，旧 D-01 别名仍生效',
     layout: {
-      'Core/Types.cs': `${family}
-// [Administrator 2026-10-18 waive=0750 why=plumbing] 只放行我自己
+      'Core/Interfaces/Types.cs': `${family}
+// [Administrator 2026-10-18 waive=D-01 why=plumbing] 只放行我自己
 public sealed class Forge
 {
     public IRoot Any { get; set; } = null!;
@@ -131,6 +131,7 @@ public sealed class Sloppy
 `,
     },
     red: 1,
+    findings: 1,
   },
   {
     name: '同名类型 → 跳过而不是猜（按名字查会串）',
@@ -172,10 +173,11 @@ for (const item of cases) {
       await writeFile(join(dir, path), text)
     }
   } else {
-    await writeFile(join(dir, 'Types.cs'), item.source)
+    await mkdir(join(dir, 'Core', 'Interfaces'), { recursive: true })
+    await writeFile(join(dir, 'Core', 'Interfaces', 'Types.cs'), item.source)
   }
 
-  const result = spawnSync('node', [cli, '--root', dir, '--only', '0750'], {
+  const result = spawnSync('node', [cli, '--root', dir, '--only', 'META_REF_LEVEL_01'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     env: { ...process.env, DOTNET_NOLOGO: '1' },
@@ -185,12 +187,14 @@ for (const item of cases) {
 
   let ok
   if (item.skip) {
-    ok = result.status === 0 && /skip\s+0750/.test(out) && /同名类型/.test(out)
+    ok = result.status === 0 && /skip\s+META_REF_LEVEL_01/.test(out) && /同名类型/.test(out)
   } else {
-    const red = out.match(/^\s{3}RED\s+0750/m) ? 1 : 0
+    const red = out.match(/^\s{3}RED\s+META_REF_LEVEL_01/m) ? 1 : 0
     const hitLines = out.split('\n').filter((line) => /引用了.*又引用了/.test(line)).length
+    const expectedFindings = item.findings ?? item.red
+    const expectedRed = item.red > 0 ? 1 : 0
     const explained = !item.expect || item.expect.test(out)
-    ok = red === item.red && hitLines === item.red && explained
+    ok = red === expectedRed && hitLines === expectedFindings && explained
   }
   results.push({ name: item.name, ok })
   console.log(`${ok ? '  ok   ' : '  FAIL '} ${item.name}`)

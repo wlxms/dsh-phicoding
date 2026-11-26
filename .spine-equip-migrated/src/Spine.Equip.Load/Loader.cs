@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Spine.Equip.Config;
 
 namespace Spine.Equip;
 
@@ -20,9 +21,9 @@ public sealed class Loader
         return world;
     }
 
-    private Dictionary<string, Set> ReadSets(JsonElement root, World world)
+    private Dictionary<string, SetDto> ReadSets(JsonElement root, World world)
     {
-        var sets = new Dictionary<string, Set>();
+        var sets = new Dictionary<string, SetDto>();
 
         foreach (var row in Rows(root, "sets", world))
         {
@@ -45,9 +46,9 @@ public sealed class Loader
                     world.Note("error: set " + id + " has no valid pieces");
                     continue;
                 }
-                var mods = ReadMods(row, world, "set " + id);
+                var mods = ReadModDtos(row, world, "set " + id);
                 if (mods == null) continue;
-                sets.Add(id, new Set(pieces, mods));
+                sets.Add(id, new SetDto(pieces, mods));
             }
             catch (Exception error) when (Expected(error))
             {
@@ -57,7 +58,7 @@ public sealed class Loader
         return sets;
     }
 
-    private void ReadItems(JsonElement root, World world, Dictionary<string, Set> sets)
+    private void ReadItems(JsonElement root, World world, Dictionary<string, SetDto> sets)
     {
         foreach (var row in Rows(root, "items", world))
         {
@@ -72,7 +73,7 @@ public sealed class Loader
         }
     }
 
-    private void ReadItem(JsonElement row, World world, Dictionary<string, Set> sets)
+    private void ReadItem(JsonElement row, World world, Dictionary<string, SetDto> sets)
     {
         var id = Text(row, "id");
 
@@ -215,7 +216,13 @@ public sealed class Loader
 
     private List<Mod>? ReadMods(JsonElement row, World world, string owner)
     {
-        var mods = new List<Mod>();
+        var mods = ReadModDtos(row, world, owner);
+        return mods?.Select(mod => new Mod(mod.Stat, mod.Add, mod.Mul)).ToList();
+    }
+
+    private List<ModDto>? ReadModDtos(JsonElement row, World world, string owner)
+    {
+        var mods = new List<ModDto>();
 
         if (!row.TryGetProperty("mods", out var value)) return mods;
         if (value.ValueKind != JsonValueKind.Array)
@@ -241,8 +248,8 @@ public sealed class Loader
                 world.Note("warning: " + owner + " mods unregistered stat " + name);
                 return null;
             }
-            mods.Add(new Mod(
-                catalogue.Stats.Get(name),
+            mods.Add(new ModDto(
+                catalogue.Stats.Get(name).GetType(),
                 Number(entry, "add", 0f, owner),
                 Number(entry, "mul", 1f, owner)));
         }
@@ -285,7 +292,7 @@ public sealed class Loader
         return requires;
     }
 
-    private static bool ReadSet(JsonElement row, World world, Dictionary<string, Set> sets, string id, out Set? set)
+    private static bool ReadSet(JsonElement row, World world, Dictionary<string, SetDto> sets, string id, out SetDto? set)
     {
         set = null;
         if (!row.TryGetProperty("set", out var value)) return true;

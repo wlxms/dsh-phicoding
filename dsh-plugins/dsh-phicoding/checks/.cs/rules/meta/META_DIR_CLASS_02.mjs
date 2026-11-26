@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 0900 - 接口模块的结构。
+// META_DIR_CLASS_02 - 接口模块的结构。
 //
 //   1) */Interfaces/* 下只能放接口；
 //   2) 项目内 top-level struct / record struct / enum 必须放本模块 Models/；
@@ -11,6 +11,6 @@
 //
 // 工程里没有任何 Interfaces/ 目录 → exit 3：本工程未采用模块分层，不算通过。
 // 跳过不是放行：软审必须判“未采用标准”，要求迁移或登记项目级豁免。
-import { run } from '../layout.mjs'
+import { run } from '../../../layout.mjs'
 
 run('structure')

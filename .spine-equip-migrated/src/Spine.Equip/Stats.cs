@@ -1,20 +1,20 @@
 namespace Spine.Equip;
 
-public sealed class Stats
+public sealed class Stats : IStatsMutable
 {
     private readonly Dictionary<Type, Pool> pools = new();
 
-    internal void Reset(IReadOnlyList<KeyValuePair<IStat, float>> basis)
+    public void Reset(IReadOnlyList<KeyValuePair<IStat, float>> basis)
     {
         pools.Clear();
         foreach (var pair in basis) pools[pair.Key.GetType()] = new Pool(pair.Value);
     }
 
-    internal void Apply(IReadOnlyList<Mod> mods)
+    public void Apply(IReadOnlyList<Mod> mods)
     {
         foreach (var mod in mods)
         {
-            var key = mod.Stat.GetType();
+            var key = mod.Stat;
             if (!pools.TryGetValue(key, out var pool)) pool = new Pool(0f);
             pool.Add(mod.Add);
             pool.Mul(mod.Mul);

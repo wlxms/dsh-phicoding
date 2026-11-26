@@ -331,8 +331,8 @@ internal static class Program
         Harness.Check("new requirement admits the novice blade", scout.Equip(world.Item("novice-blade")));
         Harness.Check("novice blade replaced the plain blade", ReferenceEquals(scout.Worn<Weapon>(), world.Item("novice-blade")));
         Harness.Near("attack with novice blade", 6f, scout.Stats.Get<Attack>());
-        Harness.Check("new requirement rejects level 7", !new MaxLevel(5).Met(new Wearer(7, new Mage())));
-        Harness.Check("new requirement accepts level 5", new MaxLevel(5).Met(new Wearer(5, new Mage())));
+        Harness.Check("new requirement rejects level 7", !new MaxLevel(5).Met(new Wearer(7, typeof(Mage))));
+        Harness.Check("new requirement accepts level 5", new MaxLevel(5).Met(new Wearer(5, typeof(Mage))));
         Harness.Check("an item whose slot the character lacks is refused", !scout.Equip(world.Item("scout-vest")));
         Harness.Check("the weapon slot kept working meanwhile", ReferenceEquals(scout.Worn<Weapon>(), world.Item("novice-blade")));
 

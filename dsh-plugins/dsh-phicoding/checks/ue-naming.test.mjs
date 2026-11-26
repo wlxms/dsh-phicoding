@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// 0450 的语义测试：UE 家族前缀。
+// META_NAMING_02 的语义测试：UE 家族前缀。
 //
 // 判据是"沿基类链走到工程外那个名字的首字母"，所以每一族都要有正例与反例；
 // 另外两条边界必须验：**非 UE 工程不能误报**（AIBase 不是 Actor）、
-// **接口与枚举不重复报**（那是 0400 的活）。
+// **接口与枚举不重复报**（那是 META_NAMING_01 的活）。
 //
 //   node ue-naming.test.mjs
 import { spawnSync } from 'node:child_process'
@@ -52,7 +52,7 @@ const cases = [
     expect: /（F 族）/,
   },
   {
-    name: '接口与枚举不重复报（那是 0400 的活）',
+    name: '接口与枚举不重复报（那是 META_NAMING_01 的活）',
     source: 'public class AMyActor : ACharacter { }\npublic interface Foo { }\npublic enum Kind { A }',
     red: 0,
   },
@@ -74,7 +74,7 @@ for (const item of cases) {
   )
   await writeFile(join(dir, 'Types.cs'), `namespace T;\n\n${item.source}\n`)
 
-  const result = spawnSync('node', [cli, '--root', dir, '--only', '0450'], {
+  const result = spawnSync('node', [cli, '--root', dir, '--only', 'META_NAMING_02'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     env: { ...process.env, DOTNET_NOLOGO: '1' },
@@ -84,9 +84,9 @@ for (const item of cases) {
 
   let ok
   if (item.skip) {
-    ok = result.status === 0 && /skip\s+0450/.test(out) && /没有 UE 根类型/.test(out)
+    ok = result.status === 0 && /skip\s+META_NAMING_02/.test(out) && /没有 UE 根类型/.test(out)
   } else {
-    const red = out.match(/^\s{3}RED\s+0450/m) ? 1 : 0
+    const red = out.match(/^\s{3}RED\s+META_NAMING_02/m) ? 1 : 0
     const hitLines = out.split('\n').filter((line) => /基类链终点是/.test(line)).length
     const explained = !item.expect || item.expect.test(out)
     ok = red === item.red && hitLines === item.red && explained

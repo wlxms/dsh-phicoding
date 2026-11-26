@@ -18,6 +18,17 @@ DeepSeek Harness 的**常驻编码与设计准则**。
 | `phicoding-unity` | Unity 组件与生命周期 |
 | `phicoding-check` | 收尾自审或评审别人的代码 |
 
+## Agent 执行契约
+
+插件根目录的 [`AGENTS.md`](AGENTS.md) 是**强制指令**，不是建议：
+
+1. 写代码前必须读 `phicoding`，并按任务读对应专项技能；没读不许编辑。
+2. 交付前必须读 `phicoding-check`。
+3. 改完必须跑完整检查；`exit 0` 才算完成，`exit 1` 修到通过，`exit 3` 不算通过。
+4. 不许用 `--only`、删规则、放宽 profile、伪造 waiver 或改测试期望绕过检查。
+
+Copilot 套件里对应的是 `.github/copilot-instructions.md`，同一份契约。
+
 ## 八条核心哲学（序号即优先级）
 
 1. **以人为本** —— 简单清晰易读 > 高性能。2. **最小实现**。3. **能力完备**。4. **最小最简命名**。

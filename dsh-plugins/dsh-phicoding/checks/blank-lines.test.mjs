@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 0600 的语义测试：什么时候"没有空行"算违规。
+// PROFILE_STYLE_03 的语义测试：什么时候"没有空行"算违规。
 //
 // 这条规则的边界全在数字与"什么算空行"上，所以每个用例只动一个变量：
 // 20 / 21 行、空行落在代码里 / 字符串里 / 注释里、空白行是不是空行。
@@ -7,7 +7,7 @@
 //
 //   node blank-lines.test.mjs
 //
-// 一个用例单独一个临时工程，跑 --only 0600；最后一个用例直接喂假 facts 给规则，
+// 一个用例单独一个临时工程，跑 --only PROFILE_STYLE_03；最后一个用例直接喂假 facts 给规则，
 // 证"底座没有空行事实"时退出码是 3 而不是 0。
 import { spawnSync } from 'node:child_process'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const cli = join(here, 'phicoding.mjs')
-const rule = join(here, '.cs', '0600-blank-line-groups.mjs')
+const rule = join(here, '.cs', 'rules', 'profile', 'PROFILE_STYLE_03.mjs')
 
 // 一个方法：签名 + { + N 条语句（可在第 i 条前插空行） + }。
 // 总行数 = N + 插的空行数 + 3。
@@ -128,7 +128,7 @@ for (const item of cases) {
   const dir = await mkdtemp(join(tmpdir(), 'phicoding-blank-'))
   await writeFile(join(dir, 'Shapes.cs'), item.source)
 
-  const result = spawnSync('node', [cli, '--root', dir, '--only', '0600'], {
+  const result = spawnSync('node', [cli, '--root', dir, '--only', 'PROFILE_STYLE_03'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     env: { ...process.env, DOTNET_NOLOGO: '1', DOTNET_CLI_TELEMETRY_OPTOUT: '1' },

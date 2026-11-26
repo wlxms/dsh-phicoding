@@ -13,23 +13,130 @@
 | 层 | 在哪 | 职责 | 决定什么 |
 | --- | --- | --- | --- |
 | **底座** | `.<后缀>/facts/` | 解析，**不判断** | 换语言只换这一层 |
-| **规则** | `.<后缀>/NNNN-名称.<ext>` | 读 facts 判断，**不解析** | 加规则只加一个文件 |
-| **CLI** | `phicoding.mjs` | 找语言 → 跑底座 → 按文件名顺序跑规则 → 汇总 | 不认识任何具体规则 |
+| **模型** | `.<后缀>/model.mjs` | 角色、关系、三张图 | 加规则只读模型，不重新解析/分类 |
+| **规则** | `.<后缀>/rules/<family>/...` | 读 facts/模型判断 | 加规则只加一个文件 |
+| **CLI** | `phicoding.mjs` | 找语言 → 跑底座 → 递归扫规则 → 按族排序 → 汇总 | 不认识任何具体规则 |
+
+规则按**不变量族**分目录，不按加入时间编号：
+
+| 族 | 目录 | 规则 |
+| --- | --- | --- |
+| **LEVEL** | `rules/meta/` / `rules/profile/` / `rules/soft/` | `META_*` / `PROFILE_*` / `SOFT_*`，按 `LEVEL_MODULE_CODE` 命名 |
+
+`META` 按阶段再分 `REF_ACYCLIC` / `REF_LEVEL` / `DIR_ACYCLIC` / `DIR_CLASS` / `SURFACE` / `NAMING` 六个模块：
+
+| 阶段 | 模块 | 规则 |
+| --- | --- | --- |
+| META 1/6 | `REF_ACYCLIC` | `META_REF_ACYCLIC_01` 具体图无环、`META_REF_ACYCLIC_02` struct 图无环 |
+| META 2/6 | `REF_LEVEL` | `META_REF_LEVEL_01` 引用等级 |
+| META 3/6 | `DIR_ACYCLIC` | `META_DIR_ACYCLIC_01` 目录单元无环 |
+| META 4/6 | `DIR_CLASS` | `META_DIR_CLASS_01` SCC 同目录、`02` 目录结构、`03` 实现落点、`04` 纯数据 |
+| META 5/6 | `SURFACE` | `META_SURFACE_01` 接口纯度、`02` 行为类接口覆盖、`03` 模块数据概念有接口、`04` PureDTO 隔离、`05` 模块单向 |
+| META 6/6 | `NAMING` | `META_NAMING_01` 命名、`META_NAMING_02` UE 命名 |
+| PROFILE | `STYLE` | `PROFILE_STYLE_01` No Else、`02` 注释、`03` 空行分组 |
+| SOFT | `DESIGN` | `SOFT_DESIGN_01` 不得持有具体实现、`02` 构造边界 |
+
+## 规则层级与递进
+
+`checks/tiers.mjs` 是唯一的分层清单。CLI 默认按它执行，不按文件名字母序：
+
+```text
+META 1/6 引用无环       META_REF_ACYCLIC_01, META_REF_ACYCLIC_02
+META 2/6 引用等级       META_REF_LEVEL_01
+META 3/6 目录无环       META_DIR_ACYCLIC_01
+META 4/6 目录归类       META_DIR_CLASS_01, META_DIR_CLASS_02, META_DIR_CLASS_03, META_DIR_CLASS_04
+META 5/6 模块接口       META_SURFACE_01, META_SURFACE_02, META_SURFACE_03, META_SURFACE_04, META_SURFACE_05
+META 6/6 命名 profile   META_NAMING_01, META_NAMING_02
+PROFILE 项目风格        PROFILE_STYLE_01, PROFILE_STYLE_02, PROFILE_STYLE_03
+SOFT 设计审查           SOFT_DESIGN_01, SOFT_DESIGN_02
+```
+
+- **META 递进**：前一个 meta 阶段失败，后面的 meta 阶段标记 `BLOCKED`，不运行；profile / soft 也 `BLOCKED`。这是“元规则不能违反”的执行形态，不是把后面的违规藏起来。
+- **PROFILE 半硬**：默认 `profile.mode=error`；项目可在 `.phicoding/config.json` 设 `profile.mode=warn`，此时只打印 `WARN`，不挡。
+- **SOFT 全软**：只打印 `soft`，永远不挡。
+- 项目本地规则未登记在 `tiers.mjs` 时按 profile 规则处理，不会自动变成全局不变量。
+- `--only` 是单规则探针，绕过递进门，直接跑指定规则。
+
+`profile` 配置示例：
+
+```json
+{
+  "profile": { "mode": "warn" }
+}
+```
+
+`model.mjs` 只做一次分类：
+
+```text
+Type role   Data / Interface / Abstract / Concrete / Utility / Extension / Root
+Feature     ConceptRoot / RootImplementation / AggregateRoot / Factory
+Relation    uses / holds / creates / implements
+Reference   kind: use / type-argument / type-token / creation
+Graph       contract / implementation / module
+```
+
+概念根是接口引用图的入度 0 源点，**允许多个**；根实现是实现了概念根的具体类，**每个根实现独立判**；聚合根在模型里等于根实现；工厂是形状特征，不是标记。
+
+`META_REF_LEVEL_01` 现在全域硬判，但接受**显式 waive**（如 UE 子系统只能按具体类型注册的 plumbing）：先算实现契约（接口 + 基类契约面，递归闭包）的 `required` 引用；只判实现自己新增的 `delta` 引用，delta 不许比 required 更具体。`new` 是 creates 跳过；契约要求的泛型实参/参数/基类契约类型是基线。waive 只豁免写了它的类型，未写的同族类型仍红；全绿时摘要记录豁免数量。
+
+### 没有 `Interfaces/` 时的模块推断
+
+旧工程没有 `Interfaces/` 时，模块规则不再一律 skip。`--diff` 把**本次改动文件**通过 `--changed` 传给规则，`layout.mjs` 按共享目录根建一棵多根树：
+
+```text
+Game/.../Modules/Rule/Actors/a.cs
+Game/.../Modules/Item/Actors/My/a.cs
+Game/.../Modules/Hero/Actors/Any/a.cs
+        ↓ 剔除共同父级 Game/.../Modules
+Rule / Item / Hero 三个模块根
+```
+
+- 目录里有 `Interfaces/`：它上面的目录是模块 / 子模块；
+- 接口声明不在 `Interfaces/` 下：`META_DIR_CLASS_02` 直接红；
+- 模块根之间的反向引用 / 环：`META_SURFACE_05` 直接判；
+- 只有改动范围里连源文件目录都推不出来时才 skip。
+
+这条推断只服务 M 族；`C` / `D` 的角色语义仍按声明的 `Interfaces/` 模块走，避免“没采用模块标准的工程突然开始按模块判具体类”。
+
+### PureDTO 与模块内数据概念
+
+数据现在分三层：
+
+```text
+ValueData     struct / record struct / enum        自身即契约，不要求接口
+PureDTO       外部 Config/ 或 Configs/ 下的 class 数据   不需要接口；不能引用模块内类型
+DataConcept   模块内 class 数据概念                必须有接口；接口只能引它的接口
+```
+
+`META_SURFACE_03` 管“模块内 class 数据必须有接口”，`META_SURFACE_04` 管“PureDTO 不能回引模块”。
+`META_SURFACE_01` 允许接口引用 ValueData 和外部 PureDTO；模块内 class 数据必须走接口，不能直接引用。
+
+### 目录/文件单元规则
+
+在模块规则之外，M 族还看**目录与文件**本身：
+
+- `META_DIR_CLASS_01`：类型引用图的每个强连通分量必须落在同一个代码目录；**同目录文件 SCC 允许，跨目录 SCC 红；工程根和模块根不豁免**；**目录规则忽略 struct / record struct**，struct 参与的类型环由 `META_REF_ACYCLIC_02` 负责；
+- `META_DIR_ACYCLIC_01`：对每条引用取源/目标目录的最近公共父目录，在公共父目录下取第一段分歧作为单元；**直属文件是 file 单元，子目录是 dir 单元**。file↔file 交 `META_DIR_CLASS_01`，M-05 只看至少一边是 dir 的边；所有单元做完整 SCC；**根目录不整体建节点，也没有整体豁免**。
+
+例子：`Module/Player/Character.cs` 与 `Module/Player/Interfaces/ICharacter.cs` 分属两个目录；单向引用合法，两个目录互相依赖才红。`META_DIR_CLASS_01` 允许同目录 SCC；`META_DIR_ACYCLIC_01` 允许同目录文件—文件环，但 `State.cs` ↔ `StateMachine/` 这种文件—目录互相依赖红。
+
+旧 `0700` 已并入 `META_SURFACE_02`；旧 `0750` 改名为 `META_REF_LEVEL_01`；旧 `0800` 只保留**具体实现图**部分为 `META_REF_ACYCLIC_01`，接口图 SCC 归软审（不新增规则）；新增 `META_REF_ACYCLIC_02` 管 struct 参与的引用环；旧 `0910` 改名为 `META_SURFACE_01`。旧编号保留为文档别名，避免迁移时找不到对应关系。
 
 **为什么底座吐 JSON 而不是让规则自己调解析器**：解析只做一次；规则不必懂 Roslyn（或任何语言）；规则可以直接喂一段 facts 来测；换语言时规则一行不动。
 
-**布局规则另有一层纯函数**：`checks/layout.mjs` 从 facts 派生模块树、类型 → 模块、接口 → 声明模块、引用边、实现计数。它不解析源码，规则只 import 它的 check 函数（`0900`–`0930` 都是薄壳）。规则仍然是独立进程；这层只是把"同一份目录派生"从四个脚本里拿出来一次，测试也可以直接 import 它、喂 facts，不必起子进程。
+**布局规则另有一层纯函数**：`checks/layout.mjs` 从 facts 派生模块树、类型 → 模块、接口 → 声明模块、引用边、实现计数。它不解析源码，规则只 import 它的 check 函数（`META_DIR_CLASS_02`–`META_DIR_CLASS_03` 都是薄壳）。规则仍然是独立进程；这层只是把"同一份目录派生"从四个脚本里拿出来一次，测试也可以直接 import 它、喂 facts，不必起子进程。
 
 ## 加东西
 
 | 想加 | 改哪 |
 | --- | --- |
-| 一条规则 | 扔一个 `NNNN-名称.mjs` 进 `.<后缀>/`。**清单和顺序都从文件名派生**，零改动别处 |
-| 一条接口模块（目录）规则 | 在 `layout.mjs` 加一个 check 函数，再扔一个 `NNNN-名称.mjs` 薄壳；用例加进 `layout.test.mjs` |
+| 一条规则 | 扔一个 `<族>-<编号>-名称.mjs` 进 `.<后缀>/rules/<族>/`。**清单和顺序都从文件路径派生**，零改动别处 |
+| 一个新角色/关系 | 先在 `model.mjs` 加事实派生，再加规则；规则不直接解析源码 |
+| 一条接口模块（目录）规则 | 在 `layout.mjs` 加一个 check 函数，再扔一个 `M-*` 薄壳；用例加进 `layout.test.mjs` |
 | 一种语言 | 加一个 `.<后缀>/` 目录和里面的底座。**规则层语言无关** |
 | 一种新事实 | 改底座——这是唯一需要改 C#（或该语言）的地方 |
 
-编号留空档（0100 / 0400 之间空着 0200、0300），中间插规则不用重排。
+旧数字编号仍可用于兼容规则；新规则优先使用 `F-` / `C-` / `D-` / `M-` 族编号。族内编号留空档，中间插规则不用重排。
 
 ## 规则契约
 
@@ -46,17 +153,18 @@
 
 规则判不了的时候，它**没有判任何东西**。把它报成 `green` 就等于声称"我看了，没问题"——它其实没看。所以：
 
-- 缺少 `config.json`（拿不到作者）→ `0500` 打印原因并 `exit 3`
-- 有同名类型、按名字查会串 → `0750` 也 `exit 3`，不猜
-- 没有 `Interfaces/` 的工程 → `0900`–`0930` 也 `exit 3`；**这不是"不适用"，软审必须判"未采用标准"**，要求迁移或项目级豁免
+- 缺少 `config.json`（拿不到作者）→ `PROFILE_STYLE_02` 打印原因并 `exit 3`
+- 有同名类型且 arity 也相同、按名字查会串 → `META_REF_LEVEL_01` 也 `exit 3`，不猜；`Foo` 与 `Foo<T>` 由 facts 的 `` `N `` 后缀区分，不会互相串
+- 没有 `Interfaces/` 且改动范围里也推不出模块目录 → `META_DIR_CLASS_02` / `META_SURFACE_05` / `META_DIR_CLASS_03` `exit 3`；**这不是“不适用”，软审仍必须判“未采用标准”**，要求迁移或项目级豁免
+- 没有 `creations` 事实 → `SOFT_DESIGN_02` 也 `exit 3`；构造边界没看，不算通过
 - CLI 打印 `skip`，计入 `report.skipped`，**不涨 `failed`**
-- 汇总行必须带上"跳过 N 条"，而且明说"不算通过"
+- 汇总行必须带上“跳过 N 条”，而且明说“不算通过”
 
-**没有等级表了。** 原来 `levels.json` 要回答"谁在谁上面"，现在由 `0750` 一条**本地**判据回答：只看引用两端各是什么档位。不需要一张全局表，也就不存在"表漏一个类型，检查悄悄少判一块"这种失效。
+**没有等级表了。** 原来 `levels.json` 要回答"谁在谁上面"，现在由 `META_REF_LEVEL_01` 一条**本地**判据回答：先扣掉实现契约要求的 `required` 引用，只看 `delta` 两端各是什么档位。它是全域硬规则，不再只作用于根实现。
 
-**原来的 `0900-trunk-is-self-contained` 已删除。** 它要判的是"主干只引用主干"，而**主干是哪一块无法机械判定**——那是设计决策。用猜出来的主干做判据，猜错就是假报。这一条现在归法官。
+**原来的 `META_DIR_CLASS_02-trunk-is-self-contained` 已删除。** 它要判的是"主干只引用主干"，而**主干是哪一块无法机械判定**——那是设计决策。用猜出来的主干做判据，猜错就是假报。这一条现在归法官。
 
->`0900` 号段现在复用为接口模块布局规则（`0900`–`0930`）。原规则文件名不同，不冲突；H5 主干面仍然归法官，因为聚合根 / 组合根只能靠命名或清单识别。
+>`META_DIR_CLASS_02` 号段现在复用为接口模块布局规则（`META_DIR_CLASS_02`–`META_DIR_CLASS_03`）。原规则文件名不同，不冲突；H5 主干面仍然归法官，因为聚合根 / 组合根只能靠命名或清单识别。
 
 
 
@@ -189,17 +297,24 @@ node checks/scope.test.mjs --fixture <带 .phicoding/config.json 的工程>
 规则语义另有自己的测试，不经过范围层：
 
 ```
-node checks/cycle.test.mjs            0800 的八种形状，各自断言"报 / 不报"
-node checks/more-concrete.test.mjs    0750 的三档边界：每档一个违规例 + 一个合法例
-node checks/blank-lines.test.mjs      0600 的边界：20 / 21 行、空行落在代码 / 字符串 / 注释里、空白行算不算
-node checks/layout.test.mjs           0900–0930 的判据：直接喂 facts，覆盖合法骨架、红例、跳过
+node checks/rules.test.mjs            C/D 族：角色、接口纯度、纯数据、持有、构造边界、具体环、struct 引用环
+node checks/tiers.test.mjs            分层清单：六段 meta 顺序、profile/soft 归属、无遗漏
+node checks/progression.test.mjs      元规则递进：前一阶段红则后续阶段 BLOCKED
+node checks/profile.test.mjs          半硬 profile：mode=warn 时 WARN 不挡
+node checks/soft.test.mjs             软规则：设计审查只提示，不挡
+node checks/cycle.test.mjs            META_REF_ACYCLIC_01 的八种形状，各自断言"报 / 不报"
+node checks/more-concrete.test.mjs    META_REF_LEVEL_01 的三档边界：每档一个违规例 + 一个合法例
+node checks/blank-lines.test.mjs      F-04 的边界：20 / 21 行、空行落在代码 / 字符串 / 注释里、空白行算不算
+node checks/layout.test.mjs           M 族判据：模块结构、SCC 同目录、目录图无环
 ```
 
-`layout.test.mjs` 不起子进程、不经过 dotnet 底座：它 import `layout.mjs` 的 check 函数，直接喂合成 facts。规则脚本是薄壳；CLI / 真实工程的集成仍要另跑（可以用 `dotnet` 直接产出 facts，再逐条跑规则）。
+`rules.test.mjs` / `layout.test.mjs` 不起子进程、不经过 dotnet 底座：它们 import 模型/布局的 check 函数，直接喂合成 facts。规则脚本是薄壳；CLI / 真实工程的集成仍要另跑（可以用 `dotnet` 直接产出 facts，再逐条跑规则）。
 
-`cycle` 证明的是**豁免范围没有扩大**：自引用、泛型自引用、菱形、纯嵌套树内部互指都不报，而两节点环、三节点环、跨出嵌套树的环都要报。
+`rules` 证明的是**角色和关系没有混**：装饰器持有接口不红，Parser 持有具体 Lexer 红；状态宿主持有 IState 不红，两个构造点红；嵌套树内部的互指不红，跨出树的环红。
 
-`more-concrete` 证明的是**档位边界画在哪**：接口档只认接口、抽象档只认抽象、具体档不认可子类。最后两条互为对照——工厂在主干外时不判，同一个错误放进主干时必须判；缺了这一对，就证明不了前一条不是"规则压根没跑"。
+`cycle` 证明的是**具体实现图的豁免范围没有扩大**：自引用、泛型自引用、菱形、纯嵌套树内部互指都不报，而两节点环、三节点环、跨出嵌套树的环都要报。
+
+`more-concrete` 证明的是**档位边界画在哪**：接口档只认接口、抽象档只认抽象、具体档不认可子类。正反例覆盖全局 META_REF_LEVEL_01；`required` 契约基线和 `delta` 新增引用各有独立用例。
 
 `blank-lines` 证明的是**"空行"这个词的边界**：空白行（只有空格）算空行，多行字符串与多行注释里的空行不算——那是内容。它还证明规则不会拿退出码撒谎：底座没给 `blankLines` 事实时 exit 3，而不是 0。
 
@@ -208,9 +323,12 @@ node checks/layout.test.mjs           0900–0930 的判据：直接喂 facts，
 - 底座按**语法位置**判引用，不做符号解析。一个**变量名刚好等于某类型名**时会产生一条多余边（罕见，且那种命名本身就该改）。
 - `using` 指令记进 facts 的 `usings`，但**不算引用**——它指命名空间，不指类型。
 - **文件头注释（`namespace` 之前）与日期日历合法性都不检查**。前者是刻意的：许可证头是真实工程必需的；后者是已知缺口，接受。
-- `blankLines` 是**行号事实，不是缩进模型**：多行字符串与多行注释内部的行先被排除，再判空行。`0600` 只看 `class` 一族与 `method` / `constructor`——`interface` 与 `enum` 的成员列表天然一行一条，按行数判会误伤。
+- `blankLines` 是**行号事实，不是缩进模型**：多行字符串与多行注释内部的行先被排除，再判空行。`PROFILE_STYLE_03` 只看 `class` 一族与 `method` / `constructor`——`interface` 与 `enum` 的成员列表天然一行一条，按行数判会误伤。
 - **空行的语义是"分组"，不是"变短"。** 检查器只能证明"长块里有边界"，证明不了"这几行属于同一组"——后者归软审查。
-- **delegate 不在 facts 里**（底座只收 `BaseTypeDeclaration`）。所以 `0900` 看不到"Interfaces 里放 delegate"，`0910` 看不到接口引用 delegate；`delegate 必须放 Models` 目前归软审。要机械化，得先扩底座。
-- **模块树从 `Interfaces/` 目录派生**。工程根的 `Interfaces/`（模块路径为空）不算模块；空 `Interfaces/` 目录（里面没有任何 `.cs`）也不会被发现。模块根本身该不该存在，是项目决定，只能软判。
-- **没有 `Interfaces/` 时四条规则全 skip**。skip 只说明硬检查看不见，不说明符合标准；软审必须判“未采用标准”，要求迁移或登记项目级豁免（原因 / 范围 / 期限）。
-- **H4 只机械化了 H4a**（同接口多实现拆目录）。多接口类的 GCD 落点、外部概念实现路径、抽象类"对应目录"、目录名最小命名都含命名判断，归软审；H5 主干面与 H6 覆盖同理（聚合根 / 组合根识别靠命名或清单）。
+- **delegate 不在 facts 里**（底座只收 `BaseTypeDeclaration`）。所以 `META_DIR_CLASS_02` 看不到"Interfaces 里放 delegate"，`META_SURFACE_01` 看不到接口引用 delegate；`delegate 必须放 Models` 目前归软审。要机械化，得先扩底座。
+- **模块树从 `Interfaces/` 目录派生，空目录也算**：目录 D 有 `D/Interfaces/` 就是模块；工程根 `Interfaces/` 也是模块，空 `Interfaces/` 目录同样会被发现。模块根没有直接代码也算模块层级。
+- **目录等级不再存在**：只判目录图无环。类型引用折叠到直接代码目录，两个目录互相依赖（A→B→A）红；单向跨级合法；文件↔文件同目录环允许；空目录没有目录边；struct 边不参与目录图。
+- **没有 `Interfaces/` 但本次有改动时**：`META_DIR_CLASS_02` / `META_SURFACE_05` / `META_DIR_CLASS_03` 从改动文件的共享目录根推断模块（`--diff` 时 CLI 把 `mine` 文件列表通过 `--changed` 传给规则），接口在不在 `Interfaces/` 下直接判；只有改动范围里连源文件目录都推不出才 skip。`META_SURFACE_02` 的具体类覆盖仍以 `Interfaces/` 采用为前提，不因推断模块而放宽。
+- **META_DIR_CLASS_04/META_SURFACE_02 的“数据/行为”是语法近似**：自动属性算数据，手写访问器算行为；**`struct` / `record struct` 一律视为数据，哪怕带方法**（struct 行为归单独的软审规则，不拿引用纯度判）；外部基类/外部接口不在 facts 里，相关判定交软审。`META_SURFACE_02` 遇到基类不在 facts 内的行为类会 skip 未判，不把“外部基类可能有接口”误报成红。
+- **SOFT_DESIGN_02 的 owner 是“唯一非 root 构造点”**：组合根和扩展类不计入构造点；同一具体类型出现第二个构造点就红，工厂/状态机宿主要在构造点收敛。
+- **H4 只机械化了 H4a**（同接口多实现拆目录）。多接口类的 GCD 落点、外部概念实现路径、抽象类"对应目录"、目录名最小命名都含命名判断，归软审；H5 根实现面与 H6 覆盖同理（概念根 / 根实现 / 工厂按特征推，主干仍靠设计判断）。

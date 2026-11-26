@@ -107,7 +107,7 @@ for (const item of cases) {
   const dir = await mkdtemp(join(tmpdir(), 'phicoding-cycle-'))
   await writeFile(join(dir, 'Shapes.cs'), item.source)
 
-  const result = spawnSync('node', [cli, '--root', dir, '--only', '0800'], {
+  const result = spawnSync('node', [cli, '--root', dir, '--only', 'META_REF_ACYCLIC_01'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     env: { ...process.env, DOTNET_NOLOGO: '1', DOTNET_CLI_TELEMETRY_OPTOUT: '1' },

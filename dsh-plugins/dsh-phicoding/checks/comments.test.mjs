@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 0500 的语义测试：注释是结构化记录。
+// PROFILE_STYLE_02 的语义测试：注释是结构化记录。
 //
 // 格式：// [<作者> <日期> <key=value> ...] <原因>
 //
@@ -115,7 +115,7 @@ for (const item of cases) {
     `namespace T;\n\npublic sealed class D\n{\n${item.comment}\n    public int Value => 0;\n}\n`,
   )
 
-  const result = spawnSync('node', [cli, '--root', dir, '--only', '0500'], {
+  const result = spawnSync('node', [cli, '--root', dir, '--only', 'PROFILE_STYLE_02'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     env: { ...process.env, DOTNET_NOLOGO: '1' },
@@ -123,7 +123,7 @@ for (const item of cases) {
   const out = `${result.stdout ?? ''}${result.stderr ?? ''}`
   await rm(dir, { recursive: true, force: true })
 
-  const red = out.match(/^\s{3}RED\s+0500/m) ? 1 : 0
+  const red = out.match(/^\s{3}RED\s+PROFILE_STYLE_02/m) ? 1 : 0
   const explained = !item.expect || item.expect.test(out)
   const fine = red === item.red && explained
 

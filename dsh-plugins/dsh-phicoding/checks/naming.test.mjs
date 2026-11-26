@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 0400 的语义测试：名字必须符合它所属类别的范式。
+// META_NAMING_01 的语义测试：名字必须符合它所属类别的范式。
 //
 // 每一类都配正例与反例；反例里有一条专门验证"基类在 BCL 中间层也要认出来"
 // （ArgumentException 不是 Exception，但终点是）。扩展类还多两条：
@@ -67,7 +67,7 @@ for (const item of cases) {
   )
   await writeFile(join(dir, 'Types.cs'), `namespace T;\n\n${item.source}\n`)
 
-  const result = spawnSync('node', [cli, '--root', dir, '--only', '0400'], {
+  const result = spawnSync('node', [cli, '--root', dir, '--only', 'META_NAMING_01'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     env: { ...process.env, DOTNET_NOLOGO: '1' },
@@ -75,7 +75,7 @@ for (const item of cases) {
   const out = `${result.stdout ?? ''}${result.stderr ?? ''}`
   await rm(dir, { recursive: true, force: true })
 
-  const red = out.match(/^\s{3}RED\s+0400/m) ? 1 : 0
+  const red = out.match(/^\s{3}RED\s+META_NAMING_01/m) ? 1 : 0
   const explained = !item.expect || item.expect.test(out)
   const fine = red === item.red && explained
 

@@ -52,6 +52,15 @@ var files = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
     .OrderBy(p => p, StringComparer.Ordinal)
     .ToList();
 
+// Empty directories are facts too: an empty Interfaces/ still declares a module.
+var directories = new List<string> { "" };
+directories.AddRange(
+    Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories)
+        .Where(p => !p.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(skip.Contains))
+        .Select(p => Path.GetRelativePath(root, p).Replace('\\', '/'))
+        .OrderBy(p => p, StringComparer.Ordinal)
+);
+
 // Parse, never compile. No references, no metadata, no build.
 var trees = files.Select(f => CSharpSyntaxTree.ParseText(File.ReadAllText(f), path: f)).ToList();
 var treeOf = trees.ToDictionary(t => t.FilePath, StringComparer.Ordinal);
@@ -62,7 +71,7 @@ foreach (var tree in trees)
     foreach (var node in tree.GetRoot().DescendantNodes())
     {
         if (node is not BaseTypeDeclarationSyntax decl) continue;
-        decls.Add((tree.FilePath, decl.Identifier.ValueText, decl));
+        decls.Add((tree.FilePath, DeclaredName(decl), decl));
     }
 }
 
@@ -123,14 +132,36 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
                     && extensionMethod.ParameterList.Parameters[0].Modifiers.Any(SyntaxKind.ThisKeyword)
                         ? extensionMethod.ParameterList.Parameters[0].Type?.ToString()
                         : null;
+                var parameterTypes = member is MethodDeclarationSyntax parameterMethod
+                    ? parameterMethod.ParameterList.Parameters
+                        .Select(parameter => parameter.Type?.ToString())
+                        .Where(text => text is not null)
+                        .ToArray()
+                    : Array.Empty<string>();
+                var access = AccessOf(member, decl is InterfaceDeclarationSyntax);
                 var memberLine = tree.GetLineSpan(member.Span).StartLinePosition.Line + 1;
                 var memberEndLine = tree.GetLineSpan(member.Span).EndLinePosition.Line + 1;
+                // “有没有方法体”是数据/行为分类所需的语法事实：自动属性没有
+                // 访问器体，手写 getter 有；纯数据规则只认前者。底座不判断它
+                // 意味着什么，只把事实交出去。
+                var hasBody = member switch
+                {
+                    MethodDeclarationSyntax method => method.Body is not null || method.ExpressionBody is not null,
+                    PropertyDeclarationSyntax property => property.AccessorList?.Accessors.Any(
+                        accessor => accessor.Body is not null || accessor.ExpressionBody is not null) ?? false,
+                    IndexerDeclarationSyntax indexer => indexer.AccessorList?.Accessors.Any(
+                        accessor => accessor.Body is not null || accessor.ExpressionBody is not null) ?? false,
+                    _ => false
+                };
                 members.Add(new
                 {
                     name = memberName,
                     kind = member.Kind().ToString().Replace("Declaration", "").ToLowerInvariant(),
                     type = memberType,
+                    parameters = parameterTypes,
+                    access,
                     isStatic = member.Modifiers.Any(SyntaxKind.StaticKeyword),
+                    hasBody,
                     extensionOf,
                     line = memberLine,
                     // A member's span is what an exemption comment inside it applies to.
@@ -244,6 +275,27 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
             }
         }
 
+        // 构造是独立事实：它不是“持有”，也不是普通的类型引用。规则要判
+        // “具体类型只允许在构造边界出现”，就必须知道这是一次 new，而不是
+        // 一次参数/返回值里的类型名。只收显式 ObjectCreation，隐式 new 没有
+        // 可判的目标类型，交给后续语义层，不在这里猜。
+        var creations = new List<object>();
+        foreach (var creation in decl.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
+        {
+            // A nested type's `new` belongs to that nested type, not to its outer
+            // declaration. Without this filter a factory in a nested helper would
+            // be attributed to the outer owner and SOFT_DESIGN_02 would see a phantom
+            // construction site.
+            if (creation.Ancestors().OfType<BaseTypeDeclarationSyntax>().FirstOrDefault() != decl) continue;
+            var target = RightmostName(creation.Type);
+            if (target is null) continue;
+            creations.Add(new
+            {
+                to = target,
+                line = tree.GetLineSpan(creation.Span).StartLinePosition.Line + 1
+            });
+        }
+
         foreach (var trivia in decl.DescendantTrivia())
         {
             if (!trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) && !trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)) continue;
@@ -270,7 +322,7 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
             if (target is null || target == name || !names.Contains(target)) continue;
             var at = tree.GetLineSpan(syntax.Span).StartLinePosition.Line + 1;
             if (!seenRef.Add($"{name}|{target}|{at}")) continue;
-            refs.Add(new { from = name, to = target, file = relative, line = at });
+            refs.Add(new { from = name, to = target, file = relative, line = at, kind = ReferenceKind(syntax) });
         }
 
         types.Add(new
@@ -280,6 +332,7 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
             kind = decl.Kind().ToString().Replace("Declaration", "").ToLowerInvariant(),
             accessibility = decl.Modifiers.Any(SyntaxKind.PublicKeyword) ? "public" : "internal",
             isAbstract = decl.Modifiers.Any(SyntaxKind.AbstractKeyword),
+            isSealed = decl.Modifiers.Any(SyntaxKind.SealedKeyword),
             isStatic = decl.Modifiers.Any(SyntaxKind.StaticKeyword),
             file = relative,
             line,
@@ -294,6 +347,7 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
             switchLines,
             strings,
             dispatches,
+            creations,
             comments
         });
     }
@@ -306,6 +360,7 @@ var payload = new
     mode = "syntax",
     fileCount = files.Count,
     files = files.Select(f => Path.GetRelativePath(root, f).Replace('\\', '/')).ToArray(),
+    directories,
     types,
     references = refs
 };
@@ -420,10 +475,53 @@ static int[] BlankInside(int[] blankLines, int firstLine, int lastLine) =>
 // TypeSyntax covers plain names, generic names and qualified names. For
 // `Spine.Data.Forge` the type is the rightmost segment; the namespace on the
 // left is not a type and must not be reported as one.
+// Generic declarations with the same identifier but different arity are distinct
+// CLR types. Keep the arity in the facts name so rules cannot mix
+// `IActionExecutor` and `IActionExecutor<T>`.
+static string DeclaredName(BaseTypeDeclarationSyntax decl) => decl switch
+{
+    TypeDeclarationSyntax type when type.TypeParameterList is { Parameters.Count: > 0 } list
+        => type.Identifier.ValueText + "`" + list.Parameters.Count,
+    _ => decl.Identifier.ValueText
+};
+
+static string AccessOf(MemberDeclarationSyntax member, bool isInterface)
+{
+    if (isInterface) return "public";
+    var modifiers = member.Modifiers;
+    if (modifiers.Any(SyntaxKind.PrivateKeyword) && modifiers.Any(SyntaxKind.ProtectedKeyword)) return "privateprotected";
+    if (modifiers.Any(SyntaxKind.ProtectedKeyword) && modifiers.Any(SyntaxKind.InternalKeyword)) return "protectedinternal";
+    if (modifiers.Any(SyntaxKind.PrivateKeyword)) return "private";
+    if (modifiers.Any(SyntaxKind.ProtectedKeyword)) return "protected";
+    if (modifiers.Any(SyntaxKind.InternalKeyword)) return "internal";
+    if (modifiers.Any(SyntaxKind.PublicKeyword)) return "public";
+    return "private";
+}
+
+static string ReferenceKind(TypeSyntax syntax)
+{
+    var parent = syntax.Parent;
+    if (parent is TypeArgumentListSyntax list)
+    {
+        var owner = list.Parent;
+        if (owner is GenericNameSyntax generic)
+        {
+            var invocation = generic.Parent;
+            if (invocation is InvocationExpressionSyntax) return "type-argument";
+            if (invocation is MemberAccessExpressionSyntax access && access.Name == generic &&
+                access.Parent is InvocationExpressionSyntax) return "type-argument";
+            if (invocation is ObjectCreationExpressionSyntax) return "type-token";
+        }
+        return "use";
+    }
+    if (parent is TypeOfExpressionSyntax) return "type-token";
+    return "use";
+}
+
 static string? RightmostName(TypeSyntax syntax) => syntax switch
 {
     IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
-    GenericNameSyntax generic => generic.Identifier.ValueText,
+    GenericNameSyntax generic => generic.Identifier.ValueText + "`" + generic.TypeArgumentList.Arguments.Count,
     QualifiedNameSyntax qualified => RightmostName(qualified.Right),
     AliasQualifiedNameSyntax alias => RightmostName(alias.Name),
     NullableTypeSyntax nullable => RightmostName(nullable.ElementType),

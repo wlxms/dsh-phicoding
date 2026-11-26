@@ -11,6 +11,6 @@ if (-not (Test-Path $checker)) {
     exit 2
 }
 
-Write-Host '== interface-module rules 0900–0930'
-& node $checker --root $Root --only 09
+Write-Host '== all language rules'
+& node $checker --root $Root
 exit $LASTEXITCODE

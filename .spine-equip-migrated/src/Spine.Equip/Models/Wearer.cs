@@ -2,7 +2,7 @@ namespace Spine.Equip;
 
 public readonly struct Wearer
 {
-    public Wearer(int level, IJob job)
+    public Wearer(int level, Type job)
     {
         Level = level;
         Job = job;
@@ -10,5 +10,5 @@ public readonly struct Wearer
 
     public int Level { get; }
 
-    public IJob Job { get; }
+    public Type Job { get; }
 }

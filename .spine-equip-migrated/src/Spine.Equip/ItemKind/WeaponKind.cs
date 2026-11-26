@@ -1,5 +1,5 @@
 namespace Spine.Equip;
 
-public abstract class WeaponKind : IItemKind
+public abstract class WeaponKind : IWeaponKind
 {
 }

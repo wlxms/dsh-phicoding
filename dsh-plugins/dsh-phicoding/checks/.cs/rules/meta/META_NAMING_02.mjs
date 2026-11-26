@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 0450 - UE 类型的前缀必须与它所属的 UE 家族一致。
+// META_NAMING_02 - UE 类型的前缀必须与它所属的 UE 家族一致。
 //
 // UE 的对象模型靠首字母编码：
 //
@@ -9,7 +9,7 @@
 //   S    Slate 控件
 //   T    模板类
 //
-// 接口（I）与枚举（E）由 0400 统一管，这里不重复报。
+// 接口（I）与枚举（E）由 META_NAMING_01 统一管，这里不重复报。
 //
 // 判据不用手写家族表：**沿基类链走到终端**，终端不在本工程里声明时，它的首字母
 // 就是家族。`AMyActor : ACharacter` → 终端 ACharacter → A 族；`UMyThing : UObject`

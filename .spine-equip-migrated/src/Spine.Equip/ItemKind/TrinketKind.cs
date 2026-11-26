@@ -1,5 +1,5 @@
 namespace Spine.Equip;
 
-public abstract class TrinketKind : IItemKind
+public abstract class TrinketKind : ITrinketKind
 {
 }

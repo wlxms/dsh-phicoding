@@ -2,9 +2,9 @@ namespace Spine.Equip;
 
 public sealed class ClassOnly : IRequirement
 {
-    private readonly IJob job;
+    private readonly Type job;
 
-    public ClassOnly(IJob job) => this.job = job;
+    public ClassOnly(IJob job) => this.job = job.GetType();
 
-    public bool Met(Wearer wearer) => job.GetType().IsInstanceOfType(wearer.Job);
+    public bool Met(Wearer wearer) => job.IsAssignableFrom(wearer.Job);
 }
