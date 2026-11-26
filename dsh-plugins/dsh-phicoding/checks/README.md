@@ -16,6 +16,133 @@
 | **模型** | `.<后缀>/model.mjs` | 角色、关系、三张图 | 加规则只读模型，不重新解析/分类 |
 | **规则** | `.<后缀>/rules/<family>/...` | 读 facts/模型判断 | 加规则只加一个文件 |
 | **CLI** | `phicoding.mjs` | 找语言 → 跑底座 → 递归扫规则 → 按族排序 → 汇总 | 不认识任何具体规则 |
+| **项目适配层** | `.phicoding/adapter.json` + `adapters/` | 事实、命名、规则覆盖/新增/装饰、强度 | 项目差异不进入规则本体 |
+
+项目适配层（PAL）是**项目事实和策略**，不是引擎分支：
+
+```
+F0 核心 facts
+  └─ adapter facts enrichment → F1
+       └─ universal rules + adapter decoration/replacement/addition → Findings
+            └─ adapter severity + local waiver → Verdict
+```
+
+适配层可以：
+
+- `facts`：给类型补语义事实（如 UnrealSharp 的 `UClass(ClassFlags.Abstract)`）；
+- `naming`：提供项目命名策略；
+- `placement`：按语言配置原子类型目录与嵌套 enum 使用范围；
+- `severity`：把规则调成 `error` / `warn` / `info` / `off`；
+- `replace`：替换允许覆盖的规则；结构规则在 `tiers.mjs` 里受保护；
+- `add`：增加项目规则；
+- `decorate`：对指定规则的 findings 做带 trace 的装饰，不能静默变绿。
+
+原子类型目录示例（`META_DIR_CLASS_02`）：
+
+```json
+{
+  "placement": {
+    "cs": {
+      "atoms": {
+        "enum": ["Enums"],
+        "struct": ["Models"],
+        "recordstruct": ["Models"]
+      },
+      "nested": {
+        "enum": { "allow": true, "scope": "containing" }
+      }
+    }
+  }
+}
+```
+
+`Models` 只是默认值，不是硬编码；项目可把 enum 放到 `Enums/`，或按语言用
+`placement.<language>` 给不同目录。空目录数组是配置错误，不是“关闭规则”。
+嵌套 enum 默认允许，但 `scope=containing` 要求它只能被包含类型及内部类型使用；
+`allow=false` 则禁止嵌套。
+
+**原子目录检查不依赖 `Interfaces/` 模块**：有声明模块时相对模块根判断；没有模块时以项目根
+为基准，仍然检查 atom 落点。接口落点需要模块，无法判时只记 note，不会把原子检查一起 skip。
+
+示例：
+
+```json
+{
+  "id": "wy-ue",
+  "engine": "unreal",
+  "naming": {
+    "interface": { "prefix": "I" },
+    "family": { "enabled": true }
+  },
+  "rules": {
+    "severity": { "META_NAMING_02": "warn" },
+    "replace": { "META_NAMING_02": "./rules/ue-naming.mjs" },
+    "add": ["./rules/WY_NAMING_01.mjs"],
+    "decorate": ["./rules/decorate.mjs"]
+  }
+}
+```
+
+`engine: "unreal"` 对应内建 `adapters/unreal.mjs`。自定义 facts 模块导出
+`enrich(facts, context) → facts`；`builtin:unreal` 也可以显式写在 `facts`。
+
+规则不是按引擎分叉：D-03 读 `semantics.abstractness`，不读 `ClassFlags`；命名规则读
+`naming` 策略，不读项目名。`OFF`、`WARN`、`adapter suppressed` 都会出现在报告里，
+不会折叠成 `green`。
+
+### 语言级 Profile
+
+"profiles.<language>" 在全局适配层之上再叠一层语言策略。语言键是 `cs`（不是 `.cs`）：
+
+```json
+{
+  "profiles": {
+    "cs": {
+      "enable": {
+        "naming": true,
+        "directoryModel": true,
+        "conceptProgramming": true,
+        "noElse": true,
+        "noSwitch": false,
+        "comments": true,
+        "blankLines": true,
+        "dataPurity": false
+      },
+      "options": {
+        "oneTypePerFile": true
+      },
+      "naming": { "interface": { "prefix": "I" } },
+      "placement": {
+        "atoms": { "enum": ["Enums"], "struct": ["Models"], "recordstruct": ["Models"] }
+      },
+      "rules": {
+        "severity": { "META_NAMING_02": "warn" },
+        "add": ["./rules/WY_CS_01.mjs"]
+      }
+    }
+  }
+}
+```
+
+`enable` 是规则激活开关：
+
+- `naming`：`META_NAMING_01/02` 和 `E` 前缀策略；
+- `directoryModel`：目录模型（`META_DIR_ACYCLIC_01` / `META_DIR_CLASS_01..04`）；
+- `conceptProgramming`：概念编程元模块（`META_SURFACE_02/03`）；
+- `noElse` / `noSwitch` / `comments` / `blankLines`：个人/项目风格；
+- `dataPurity`：`META_DIR_CLASS_04`，默认关闭（这不是通用要求）。
+
+默认值按现有行为：naming/directory/concept/noElse/comments/blankLines 开启；
+noSwitch 与 dataPurity 默认关闭。关闭的规则在完整检查中**不运行、也不产生 skip**；
+一个 meta 阶段全部关闭时输出 `SKIP ...（项目 profile 未启用）`，不会把它当成通过。
+
+Profile 可覆盖 `naming` / `placement` / `options`，也可增删/调强度/替换允许替换的语言规则。
+`oneTypePerFile` 由 `PROFILE_FILE_01` 执行，默认关闭；开启后一个文件只能有一个 top-level
+`class` / `record`，嵌套类型不计数，`partial` 同名声明视为同一个类型。`Foo` 与 `Foo<T>` 是
+不同 arity，同一个文件里的同名泛型伴生类默认豁免（`exemptGenericSameName: false` 可关闭）；
+`Foo` 与不同名的 `Bar<T>` 仍算两个类型。可用
+`{"enabled": true, "kinds": ["class", "record", "interface", "enum", "struct", "recordstruct"]}`
+调整计数类型。
 
 规则按**不变量族**分目录，不按加入时间编号：
 
@@ -33,7 +160,7 @@
 | META 4/6 | `DIR_CLASS` | `META_DIR_CLASS_01` SCC 同目录、`02` 目录结构、`03` 实现落点、`04` 纯数据 |
 | META 5/6 | `SURFACE` | `META_SURFACE_01` 接口纯度、`02` 行为类接口覆盖、`03` 模块数据概念有接口、`04` PureDTO 隔离、`05` 模块单向 |
 | META 6/6 | `NAMING` | `META_NAMING_01` 命名、`META_NAMING_02` UE 命名 |
-| PROFILE | `STYLE` | `PROFILE_STYLE_01` No Else、`02` 注释、`03` 空行分组 |
+| PROFILE | `STYLE` | `PROFILE_STYLE_01` No Else、`02` 注释、`03` 空行分组、`04` No Switch（默认关）；`PROFILE_FILE_01` 由语言 profile 选择性启用 |
 | SOFT | `DESIGN` | `SOFT_DESIGN_01` 不得持有具体实现、`02` 构造边界 |
 
 ## 规则层级与递进
@@ -44,10 +171,10 @@
 META 1/6 引用无环       META_REF_ACYCLIC_01, META_REF_ACYCLIC_02
 META 2/6 引用等级       META_REF_LEVEL_01
 META 3/6 目录无环       META_DIR_ACYCLIC_01
-META 4/6 目录归类       META_DIR_CLASS_01, META_DIR_CLASS_02, META_DIR_CLASS_03, META_DIR_CLASS_04
+META 4/6 目录归类       META_DIR_CLASS_01, META_DIR_CLASS_02, META_DIR_CLASS_03, META_DIR_CLASS_04（可选 dataPurity）
 META 5/6 模块接口       META_SURFACE_01, META_SURFACE_02, META_SURFACE_03, META_SURFACE_04, META_SURFACE_05
 META 6/6 命名 profile   META_NAMING_01, META_NAMING_02
-PROFILE 项目风格        PROFILE_STYLE_01, PROFILE_STYLE_02, PROFILE_STYLE_03
+PROFILE 项目风格        PROFILE_STYLE_01, PROFILE_STYLE_02, PROFILE_STYLE_03（+ 可选 PROFILE_STYLE_04 / PROFILE_FILE_01）
 SOFT 设计审查           SOFT_DESIGN_01, SOFT_DESIGN_02
 ```
 
@@ -77,7 +204,7 @@ Graph       contract / implementation / module
 
 概念根是接口引用图的入度 0 源点，**允许多个**；根实现是实现了概念根的具体类，**每个根实现独立判**；聚合根在模型里等于根实现；工厂是形状特征，不是标记。
 
-`META_REF_LEVEL_01` 现在全域硬判，但接受**显式 waive**（如 UE 子系统只能按具体类型注册的 plumbing）：先算实现契约（接口 + 基类契约面，递归闭包）的 `required` 引用；只判实现自己新增的 `delta` 引用，delta 不许比 required 更具体。`new` 是 creates 跳过；契约要求的泛型实参/参数/基类契约类型是基线。waive 只豁免写了它的类型，未写的同族类型仍红；全绿时摘要记录豁免数量。
+`META_REF_LEVEL_01` 现在全域硬判，但接受**显式 waive**（如 UE 子系统只能按具体类型注册的 plumbing）：先算实现契约（接口 + 基类契约面，递归闭包）的 `required` 引用；只判实现自己新增的 `delta` API 引用，delta 不许比 required 更具体。`new` 是 creates 跳过；契约要求的泛型实参/参数/基类契约类型是基线。**基类契约带上的 `required` 引用会从派生类的 `required` 与 `targets` 中一并移除**；派生类只对重新计算后的剩余引用判等级（避免“基类引用接口 → 派生类必然引用接口 → 再加具体类”被误判）。直接实现的接口仍然是本类型的契约。**字段/属性/事件存储归 `SOFT_DESIGN_01` 的软审。**waive 只豁免写了它的类型，未写的同族类型仍红；全绿时摘要记录豁免数量。
 
 ### 没有 `Interfaces/` 时的模块推断
 
@@ -108,7 +235,7 @@ PureDTO       外部 Config/ 或 Configs/ 下的 class 数据   不需要接口�
 DataConcept   模块内 class 数据概念                必须有接口；接口只能引它的接口
 ```
 
-`META_SURFACE_03` 管“模块内 class 数据必须有接口”，`META_SURFACE_04` 管“PureDTO 不能回引模块”。
+`META_SURFACE_02/03` 是概念编程元模块（可关），`META_SURFACE_04` 管“PureDTO 不能回引模块”。
 `META_SURFACE_01` 允许接口引用 ValueData 和外部 PureDTO；模块内 class 数据必须走接口，不能直接引用。
 
 ### 目录/文件单元规则
@@ -143,6 +270,10 @@ DataConcept   模块内 class 数据概念                必须有接口；接�
 ```
 入参   --facts <facts.json>  --config <config.json>
        --rules <本语言规则目录>  --root <被检查的项目根>
+       [--changed <changed.json>]
+
+适配层  --adapter <adapter.json>（默认 <root>/.phicoding/adapter.json）
+        facts 先 enrich；--config 传的是 project config + adapter 的有效配置
 出参   stdout 一行一条问题
 退出码 0 = 通过，1 = 有问题，3 = 不适用（输入缺失或有歧义，判不了）
 ```
@@ -325,10 +456,10 @@ node checks/layout.test.mjs           M 族判据：模块结构、SCC 同目录
 - **文件头注释（`namespace` 之前）与日期日历合法性都不检查**。前者是刻意的：许可证头是真实工程必需的；后者是已知缺口，接受。
 - `blankLines` 是**行号事实，不是缩进模型**：多行字符串与多行注释内部的行先被排除，再判空行。`PROFILE_STYLE_03` 只看 `class` 一族与 `method` / `constructor`——`interface` 与 `enum` 的成员列表天然一行一条，按行数判会误伤。
 - **空行的语义是"分组"，不是"变短"。** 检查器只能证明"长块里有边界"，证明不了"这几行属于同一组"——后者归软审查。
-- **delegate 不在 facts 里**（底座只收 `BaseTypeDeclaration`）。所以 `META_DIR_CLASS_02` 看不到"Interfaces 里放 delegate"，`META_SURFACE_01` 看不到接口引用 delegate；`delegate 必须放 Models` 目前归软审。要机械化，得先扩底座。
+- **delegate 不在 facts 里**（底座只收 `BaseTypeDeclaration`）。所以 `META_DIR_CLASS_02` 看不到"Interfaces 里放 delegate"，`META_SURFACE_01` 看不到接口引用 delegate；`delegate` 的原子目录（默认 `Models/`）目前归软审。要机械化，得先扩底座。
 - **模块树从 `Interfaces/` 目录派生，空目录也算**：目录 D 有 `D/Interfaces/` 就是模块；工程根 `Interfaces/` 也是模块，空 `Interfaces/` 目录同样会被发现。模块根没有直接代码也算模块层级。
 - **目录等级不再存在**：只判目录图无环。类型引用折叠到直接代码目录，两个目录互相依赖（A→B→A）红；单向跨级合法；文件↔文件同目录环允许；空目录没有目录边；struct 边不参与目录图。
 - **没有 `Interfaces/` 但本次有改动时**：`META_DIR_CLASS_02` / `META_SURFACE_05` / `META_DIR_CLASS_03` 从改动文件的共享目录根推断模块（`--diff` 时 CLI 把 `mine` 文件列表通过 `--changed` 传给规则），接口在不在 `Interfaces/` 下直接判；只有改动范围里连源文件目录都推不出才 skip。`META_SURFACE_02` 的具体类覆盖仍以 `Interfaces/` 采用为前提，不因推断模块而放宽。
-- **META_DIR_CLASS_04/META_SURFACE_02 的“数据/行为”是语法近似**：自动属性算数据，手写访问器算行为；**`struct` / `record struct` 一律视为数据，哪怕带方法**（struct 行为归单独的软审规则，不拿引用纯度判）；外部基类/外部接口不在 facts 里，相关判定交软审。`META_SURFACE_02` 遇到基类不在 facts 内的行为类会 skip 未判，不把“外部基类可能有接口”误报成红。
+- **META_DIR_CLASS_04（可选 dataPurity）/META_SURFACE_02 的“数据/行为”是语法近似**：自动属性算数据，手写访问器算行为；**`struct` / `record struct` 一律视为数据，哪怕带方法**（struct 行为归单独的软审规则，不拿引用纯度判）；外部基类/外部接口不在 facts 里，相关判定交软审。`META_SURFACE_02` 遇到基类不在 facts 内的行为类会 skip 未判，不把“外部基类可能有接口”误报成红。
 - **SOFT_DESIGN_02 的 owner 是“唯一非 root 构造点”**：组合根和扩展类不计入构造点；同一具体类型出现第二个构造点就红，工厂/状态机宿主要在构造点收敛。
 - **H4 只机械化了 H4a**（同接口多实现拆目录）。多接口类的 GCD 落点、外部概念实现路径、抽象类"对应目录"、目录名最小命名都含命名判断，归软审；H5 根实现面与 H6 覆盖同理（概念根 / 根实现 / 工厂按特征推，主干仍靠设计判断）。

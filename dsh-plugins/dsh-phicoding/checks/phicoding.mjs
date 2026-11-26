@@ -18,15 +18,17 @@
 //
 // Usage:
 //   phicoding --root <dir> [--only <id>] [--list] [--init] [--json]
+//   phicoding --root <dir> --adapter <adapter.json>
 import { spawnSync } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, extname, join, relative } from 'node:path'
+import { dirname, extname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as scope from './scope.mjs'
 import * as init from './init.mjs'
 import * as tiers from './tiers.mjs'
+import * as adapters from './adapters.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const SKIP = new Set(['bin', 'obj', 'node_modules', '.git', '.build'])
@@ -47,6 +49,7 @@ const wantJson = flag('--json')
 // what the comment format is, who the author is - all of that belongs to the
 // project, so a rule reads it from here rather than hard-coding it.
 const explicitConfig = value('--config')
+const explicitAdapter = value('--adapter')
 const wantInit = flag('--init')
 const configPath = explicitConfig ?? join(root, '.phicoding', 'config.json')
 
@@ -110,7 +113,7 @@ async function walkRules(dir, local, found, base = dir) {
       if (entry.isDirectory()) await walkRules(join(dir, entry.name), local, found, base)
       continue
     }
-    if (!/^(?:META|PROFILE|SOFT)_[A-Z0-9_]+_\d{2}\.(mjs|js|sh|cmd|exe|py)$/.test(entry.name)) continue
+    if (!/^(?:[A-Z][A-Z0-9]*)_[A-Z0-9_]+_\d{2}\.(mjs|js|sh|cmd|exe|py)$/.test(entry.name)) continue
     const path = join(dir, entry.name)
     found.push({
       id: entry.name.replace(/\.[^.]+$/, ''),
@@ -137,16 +140,42 @@ async function rulesOf(langDir, extraDir) {
   })
 }
 
+// An adapter may replace a rule implementation and add project rules. It may
+// not silently drop a universal rule or introduce a duplicate id: both are
+// configuration errors, not "no rule, so nothing failed".
+function applyAdapterRules(rules, adapter) {
+  if (!adapter) return rules
+  const known = new Map(rules.map((rule) => [rule.id, rule]))
+  const result = rules.map((rule) => {
+    const replacement = adapter.replace.get(rule.id)
+    if (!replacement) return rule
+    return {
+      ...rule,
+      path: replacement.path,
+      adapterOverride: true
+    }
+  })
+  for (const id of adapter.replace.keys()) {
+    if (!known.has(id)) throw new Error(`适配层要替换不存在的规则：${id}`)
+  }
+  for (const addition of adapter.additions) {
+    if (known.has(addition.id)) throw new Error(`适配层新增规则与现有规则重名：${addition.id}`)
+    result.push(addition)
+    known.set(addition.id, addition)
+  }
+  return result
+}
+
 // A project's own rules live with the project: they encode choices that belong
 // to one design (which strings are data, what the display language is) and would
 // be wrong imposed on every other project.
 const localRules = join(root, '.phicoding', 'rules')
 
-function runRule(rule, factsPath, toolsDir, runRoot, changedPath) {
+function runRule(rule, factsPath, toolsDir, runRoot, changedPath, effectiveConfigPath = configPath) {
   const ext = extname(rule.path).toLowerCase()
   // --rules points at the language's rule directory, so a project rule can check
   // that the rule it names actually exists instead of trusting a hand-kept list.
-  const common = ['--facts', factsPath, '--config', configPath, '--rules', toolsDir, '--root', runRoot]
+  const common = ['--facts', factsPath, '--config', effectiveConfigPath, '--rules', toolsDir, '--root', runRoot]
   if (changedPath) common.push('--changed', changedPath)
   const launched = ext === '.mjs' || ext === '.js'
     ? ['node', [rule.path, ...common]]
@@ -254,7 +283,32 @@ if (active.length === 0) {
   process.exit(2)
 }
 
-const report = { root, languages: [], failed: 0, soft: 0, grey: 0, skipped: 0, warn: 0, blocked: 0, unknown: 0 }
+const report = { root, languages: [], failed: 0, soft: 0, grey: 0, skipped: 0, warn: 0, info: 0, off: 0, disabled: 0, blocked: 0, unknown: 0, adapterSuppressed: 0 }
+
+let adapter = null
+try {
+  adapter = await adapters.loadAdapter({
+    root,
+    manifestPath: explicitAdapter ? resolve(explicitAdapter) : undefined
+  })
+} catch (error) {
+  console.error(`phicoding: 项目适配层加载失败：${error.message}`)
+  process.exit(2)
+}
+if (adapter) {
+  console.log(`== adapter ${adapter.id}  ${adapter.scope}${adapter.engine ? `  engine=${adapter.engine}` : ''}`)
+  console.log(`   ${adapter.manifestPath}`)
+  report.adapter = {
+    id: adapter.id,
+    engine: adapter.engine,
+    scope: adapter.scope,
+    manifest: adapter.manifestPath,
+    severity: Object.fromEntries(adapter.severity),
+    replace: [...adapter.replace.keys()],
+    additions: adapter.additions.map((rule) => rule.id),
+    decorators: adapter.decorators.map((decorator) => decorator.id)
+  }
+}
 
 // ---- findings and scope ----------------------------------------------------
 // A rule prints one finding per line. Every `path:line` inside the line is one of
@@ -273,6 +327,33 @@ function locationsIn(line) {
 
 function firstLine(text) {
   return (text ?? '').split('\n').find((line) => line.trim()) ?? ''
+}
+
+function linesOf(output) {
+  return String(output ?? '').split('\n').filter((line) => line.trim())
+}
+
+async function decorateResult(result, { ruleId, facts, config, changedFiles, view = adapter }) {
+  if (!view || !result.output) return result
+  const decorated = await adapters.decorate(view, {
+    ruleId,
+    lines: linesOf(result.output),
+    facts,
+    config,
+    changedFiles
+  })
+  result.output = decorated.lines.join('\n')
+  result.adapterTrace = decorated.trace
+  if (decorated.trace.some((entry) => entry.action === 'suppress')) {
+    result.adapterSuppressed = decorated.trace.filter((entry) => entry.action === 'suppress')
+  }
+  return result
+}
+
+function strengthFor(id, tier, profileMode, view = adapter) {
+  if (view?.severity.has(id)) return view.severity.get(id)
+  if (tier === 'profile' && profileMode !== 'error') return 'warn'
+  return 'error'
 }
 
 function classify(result, mine, other) {
@@ -303,11 +384,19 @@ function classify(result, mine, other) {
 // One rule result, interpreted by its tier. Meta failures block the rest of the
 // pipeline; profile findings are warnings unless the project raises them to
 // errors; soft findings never block.
-function emitTieredResult(result, tier, profileMode) {
+function emitTieredResult(result, tier, profileMode, view = adapter, strength = strengthFor(result.id, tier, profileMode, view)) {
   const heading = tier === 'meta' ? 'RED' : tier === 'profile' ? 'RED' : 'soft'
+  const trace = result.adapterTrace ?? []
+  const printTrace = () => {
+    for (const entry of trace) {
+      const reason = entry.reason ? `   ${entry.reason}` : ''
+      console.log(`           adapter ${entry.action ?? 'note'}${reason}`)
+    }
+  }
   if (result.ok) {
     console.log(`   green ${result.id}`)
     if (result.output) for (const line of result.output.split('\n')) console.log(`           ${line}`)
+    printTrace()
     return 'pass'
   }
   if (result.skipped) {
@@ -318,10 +407,37 @@ function emitTieredResult(result, tier, profileMode) {
 
   const scoped = wantDiff ? classify(result, mine, other) : { red: (result.output ?? '').split('\n').filter((line) => line.trim()), grey: [], soft: [] }
   const broke = scoped.red.length === 0 && scoped.grey.length === 0 && scoped.soft.length === 0
+
+  // A decorator may suppress a failed rule's findings, but only with a trace.
+  // It still counts as a policy suppression, never as a plain pass.
+  if (result.adapterSuppressed?.length && broke) {
+    console.log(`   adapter ${result.id}   suppressed ${result.adapterSuppressed.length} 处（适配层装饰，不算通过）`)
+    printTrace()
+    report.adapterSuppressed += result.adapterSuppressed.length
+    return 'pass'
+  }
+  if (strength === 'off') {
+    const count = scoped.red.length + scoped.grey.length + scoped.soft.length
+    console.log(`   off   ${result.id}   ${count} 处（适配层关闭，不算通过）`)
+    for (const line of scoped.red) console.log(`           ${line}`)
+    printTrace()
+    report.off += count
+    return 'pass'
+  }
+  if (strength === 'warn' || strength === 'info') {
+    const count = scoped.red.length + scoped.grey.length + scoped.soft.length
+    console.log(`   ${strength === 'warn' ? 'WARN ' : 'info '} ${result.id}   ${count} 处（强度降级，未挡）`)
+    for (const line of scoped.red) console.log(`           ${line}`)
+    printTrace()
+    if (strength === 'warn') report.warn += count
+    else report.info += count
+    return 'pass'
+  }
   if (tier === 'soft') {
     const findings = scoped.red.length + scoped.grey.length + scoped.soft.length
     console.log(`   soft  ${result.id}   ${findings || 0} 处（设计审查，未挡）`)
     for (const line of [...scoped.red, ...scoped.grey, ...scoped.soft]) console.log(`           ${line}`)
+    printTrace()
     report.soft += findings
     return 'pass'
   }
@@ -339,16 +455,9 @@ function emitTieredResult(result, tier, profileMode) {
   }
 
   const findings = scoped.red.length
-  const failing = findings > 0 || broke
-  if (tier === 'profile' && profileMode !== 'error') {
-    console.log(`   WARN  ${result.id}   ${failing ? `${findings} 处（profile=warn，未挡）` : '（profile 未挡）'}`)
-    for (const line of scoped.red) console.log(`           ${line}`)
-    report.warn += findings
-    return 'pass'
-  }
-
   console.log(`   ${heading.toUpperCase()} ${result.id}   ${broke ? '（没有产出任何可定位的 finding）' : `${findings} 处`}`)
   for (const line of scoped.red) console.log(`           ${line}`)
+  printTrace()
   if (result.error) {
     const brief = result.error.split('\n')
     for (const line of brief.slice(0, 8)) console.log(`           ! ${line}`)
@@ -358,12 +467,17 @@ function emitTieredResult(result, tier, profileMode) {
   return 'fail'
 }
 
-async function runProgressive({ rules, profileMode, profileEnabled, factsPath, lang, entry, changedPath }) {
+async function runProgressive({ rules, profileMode, profileEnabled, factsPath, facts, config, lang, entry, changedPath, effectiveConfigPath, view }) {
   let blocked = false
 
   for (let index = 0; index < tiers.META_STAGES.length; index++) {
     const stage = tiers.META_STAGES[index]
     const stageRules = tiers.stageRules(rules, index)
+    if (stageRules.length === 0) {
+      console.log(`   SKIP  META ${index + 1}/6 ${stage.label}   （项目 profile 未启用）`)
+      report.disabled++
+      continue
+    }
     if (blocked) {
       for (const rule of stageRules) {
         console.log(`   BLOCKED  META ${index + 1}/6 ${stage.label}   ${rule.id}`)
@@ -375,9 +489,12 @@ async function runProgressive({ rules, profileMode, profileEnabled, factsPath, l
     let anyPass = false
     let stageFailed = false
     for (const rule of stageRules) {
-      const result = runRule(rule, factsPath, lang.dir, root, changedPath)
+      const result = await decorateResult(
+        runRule(rule, factsPath, lang.dir, root, changedPath, effectiveConfigPath),
+        { ruleId: rule.id, facts, config }
+      )
       entry.rules.push({ ...result, tier: 'meta', stage: index + 1 })
-      const status = emitTieredResult(result, 'meta', profileMode)
+      const status = emitTieredResult(result, 'meta', profileMode, view)
       if (status === 'pass') anyPass = true
       if (status === 'fail') stageFailed = true
     }
@@ -410,9 +527,12 @@ async function runProgressive({ rules, profileMode, profileEnabled, factsPath, l
   } else {
     console.log('   PROFILE 项目风格')
     for (const rule of profileRules) {
-      const result = runRule(rule, factsPath, lang.dir, root, changedPath)
+      const result = await decorateResult(
+        runRule(rule, factsPath, lang.dir, root, changedPath, effectiveConfigPath),
+        { ruleId: rule.id, facts, config }
+      )
       entry.rules.push({ ...result, tier: 'profile' })
-      emitTieredResult(result, 'profile', profileMode)
+      emitTieredResult(result, 'profile', profileMode, view)
     }
   }
 
@@ -420,9 +540,12 @@ async function runProgressive({ rules, profileMode, profileEnabled, factsPath, l
   if (softRules.length > 0) {
     console.log('   SOFT 设计审查')
     for (const rule of softRules) {
-      const result = runRule(rule, factsPath, lang.dir, root, changedPath)
+      const result = await decorateResult(
+        runRule(rule, factsPath, lang.dir, root, changedPath, effectiveConfigPath),
+        { ruleId: rule.id, facts, config }
+      )
       entry.rules.push({ ...result, tier: 'soft' })
-      emitTieredResult(result, 'soft', profileMode)
+      emitTieredResult(result, 'soft', profileMode, view)
     }
   }
 }
@@ -482,10 +605,12 @@ for (const lang of active) {
   const dir = await mkdtemp(join(tmpdir(), 'phicoding-'))
   const factsPath = join(dir, 'facts.json')
   let facts
+  let effectiveConfigPath = configPath
   try {
     const payload = runBase(dll, root, factsPath)
     facts = payload.facts
-    await writeFile(factsPath, payload.text, 'utf8')
+    facts = await adapters.enrichFacts(adapter, facts, { root, configPath })
+    await writeFile(factsPath, JSON.stringify(facts), 'utf8')
   } catch (error) {
     console.log(`   BASE 失败：${error.message}`)
     entry.baseFailed = error.message
@@ -519,7 +644,17 @@ for (const lang of active) {
     }
   }
 
-const all = await rulesOf(lang.dir, localRules)
+const view = adapters.viewFor(adapter, lang.ext)
+let all = await rulesOf(lang.dir, localRules)
+try {
+  all = applyAdapterRules(all, view)
+} catch (error) {
+  console.log(`   ADAPTER 失败：${error.message}`)
+  report.failed++
+  await rm(dir, { recursive: true, force: true })
+  report.languages.push(entry)
+  continue
+}
 const onlyWanted = only ? tiers.resolveRuleId(only) : undefined
 const chosen = onlyWanted ? all.filter((r) => r.id.includes(onlyWanted)) : all
 
@@ -530,6 +665,16 @@ const chosen = onlyWanted ? all.filter((r) => r.id.includes(onlyWanted)) : all
     // A missing or malformed config is not silently a pass: rules that need it
     // already report their own configuration errors. The tier policy defaults
     // to warning for profile rules.
+  }
+  const effectiveConfig = adapters.effectiveConfig(projectConfig, view, lang.ext)
+  if (view) {
+    effectiveConfigPath = join(dir, 'effective-config.json')
+    await writeFile(effectiveConfigPath, JSON.stringify(effectiveConfig, null, 2), 'utf8')
+  }
+  if (!only) {
+    // Opt-in language profile rules do not run at all until enabled. Running them
+    // as skip would make every C# project report a permanent skip.
+    all = all.filter((rule) => tiers.profileRuleEnabled(rule.id, lang.ext, effectiveConfig))
   }
   const profileSettings = projectConfig.profile ?? {}
   const profileMode = projectConfig.profileMode === 'warn' || profileSettings.mode === 'warn' ? 'warn' : 'error'
@@ -552,9 +697,13 @@ const chosen = onlyWanted ? all.filter((r) => r.id.includes(onlyWanted)) : all
       profileMode,
       profileEnabled,
       factsPath,
+      facts,
+      config: effectiveConfig,
       lang,
       entry,
-      changedPath
+      changedPath,
+      effectiveConfigPath,
+      view
     })
     await rm(dir, { recursive: true, force: true })
     report.languages.push(entry)
@@ -562,66 +711,47 @@ const chosen = onlyWanted ? all.filter((r) => r.id.includes(onlyWanted)) : all
   }
 
   for (const rule of chosen) {
-    const result = runRule(rule, factsPath, lang.dir, root, changedPath)
+    const result = await decorateResult(
+      runRule(rule, factsPath, lang.dir, root, changedPath, effectiveConfigPath),
+      { ruleId: rule.id, facts, config: effectiveConfig, view }
+    )
     entry.rules.push(result)
 
-    if (wantDiff) {
-      // A green rule found nothing anywhere, which is also nothing in scope. It
-      // must be reported before classification: an empty output is not evidence of
-      // a broken rule, it is evidence of a clean one.
-      if (result.ok) {
-        console.log(`   green ${result.id}`)
-        if (result.output) for (const line of result.output.split('\n')) console.log(`           ${line}`)
-        continue
-      }
-      if (result.skipped) {
-        console.log(`   skip  ${result.id}   ${firstLine(result.output)}`)
-        report.skipped++
-        continue
-      }
-      const { red, grey, soft } = classify(result, mine, other)
-      // A rule that exited non-zero without producing a scoped finding did not
-      // "find nothing in my scope" - it failed. That is blocking either way.
-      const broke = red.length === 0 && grey.length === 0 && soft.length === 0
-      if (red.length > 0 || broke) {
-        console.log(`   RED   ${result.id}   ${broke ? '（没有产出任何可定位的 finding）' : red.length + ' 处'}`)
-        for (const line of red) console.log(`           ${line}`)
-        report.failed++
-      } else if (grey.length > 0) {
-        console.log(`   grey  ${result.id}   ${grey.length} 处（改过但不在本会话的账里，未挡）`)
-        for (const line of grey) console.log(`           ${line}`)
-        report.grey += grey.length
-      } else {
-        console.log(`   soft  ${result.id}   ${soft.length} 处（改动范围外，未挡）`)
-        report.soft += soft.length
-      }
-      if (result.error) {
-        const brief = result.error.split('\n')
-        for (const line of brief.slice(0, 8)) console.log(`           ! ${line}`)
-        if (brief.length > 8) console.log('           ! …')
-      }
+    if (!wantDiff) {
+      emitTieredResult(result, tiers.classify(rule.id).tier, profileMode, view)
       continue
     }
 
     if (result.ok) {
       console.log(`   green ${result.id}`)
       if (result.output) for (const line of result.output.split('\n')) console.log(`           ${line}`)
-    } else if (result.skipped) {
-      // Not applicable: an optional input is absent. Printing this as `green` would
-      // claim the rule looked and found nothing; it looked at nothing.
+      continue
+    }
+    if (result.skipped) {
       console.log(`   skip  ${result.id}   ${firstLine(result.output)}`)
       report.skipped++
-    } else {
-      console.log(`   RED   ${result.id}`)
-      if (result.output) for (const line of result.output.split('\n')) console.log(`           ${line}`)
-      // A Node stack trace is not a finding: eight lines are enough to see what
-      // broke, and the rest is noise the reader has to wade through.
-      if (result.error) {
-        const brief = result.error.split('\n')
-        for (const line of brief.slice(0, 8)) console.log(`           ! ${line}`)
-        if (brief.length > 8) console.log('           ! …')
-      }
+      continue
+    }
+    const { red, grey, soft } = classify(result, mine, other)
+    // A rule that exited non-zero without producing a scoped finding did not
+    // "find nothing in my scope" - it failed. That is blocking either way.
+    const broke = red.length === 0 && grey.length === 0 && soft.length === 0
+    if (red.length > 0 || broke) {
+      console.log(`   RED   ${result.id}   ${broke ? '（没有产出任何可定位的 finding）' : red.length + ' 处'}`)
+      for (const line of red) console.log(`           ${line}`)
       report.failed++
+    } else if (grey.length > 0) {
+      console.log(`   grey  ${result.id}   ${grey.length} 处（改过但不在本会话的账里，未挡）`)
+      for (const line of grey) console.log(`           ${line}`)
+      report.grey += grey.length
+    } else {
+      console.log(`   soft  ${result.id}   ${soft.length} 处（改动范围外，未挡）`)
+      report.soft += soft.length
+    }
+    if (result.error) {
+      const brief = result.error.split('\n')
+      for (const line of brief.slice(0, 8)) console.log(`           ! ${line}`)
+      if (brief.length > 8) console.log('           ! …')
     }
   }
 
@@ -640,7 +770,11 @@ console.log('')
 // summary would claim coverage the run did not have.
 const tailParts = []
 if (report.skipped > 0) tailParts.push(`跳过 ${report.skipped} 条（可选输入缺失，不算通过）`)
-if (report.warn > 0) tailParts.push(`WARN ${report.warn} 处（profile 未挡）`)
+if (report.warn > 0) tailParts.push(`WARN ${report.warn} 处（强度降级，未挡）`)
+if (report.info > 0) tailParts.push(`info ${report.info} 处（强度降级，未挡）`)
+if (report.off > 0) tailParts.push(`off ${report.off} 处（适配层关闭，不算通过）`)
+if (report.disabled > 0) tailParts.push(`disabled ${report.disabled} 个阶段（项目 profile 未启用）`)
+if (report.adapterSuppressed > 0) tailParts.push(`适配层抑制 ${report.adapterSuppressed} 处`)
 if (report.blocked > 0) tailParts.push(`BLOCKED ${report.blocked} 条（前序元规则失败）`)
 if (report.unknown > 0) tailParts.push(`UNKNOWN ${report.unknown} 个阶段`)
 const tail = tailParts.length > 0 ? `  ${tailParts.join(' · ')}` : ''

@@ -27,6 +27,8 @@ description: 可判定的自审清单。哲学法官的两个关口——审规�
 
 ## 哲学法官 · 关口二：硬检查 + 软审查
 
+**项目适配层**（若存在 `.phicoding/adapter.json`）先补语义事实/命名/强度/规则扩展；报告里的 `off`、`WARN`、`adapter suppressed` 都是有意的策略结果，不是 `green`，软审必须看见它们。`profiles.<lang>.enable` 控制 naming / directoryModel / conceptProgramming / noElse / noSwitch / comments / blankLines / dataPurity；关闭的规则不运行。
+
 **第一步永远是硬的**：先跑 `phicoding --root <项目>`。红了就是违规，直接打回，没有讨论空间。
 
 检查器内部按 `meta → profile → soft` 三层跑。六个 meta 阶段（引用无环 → 引用等级 → 目录无环 → 目录归类 → 模块接口 → 命名 profile）递进执行；前一阶段红了，后面的 meta 与 profile/soft 都标 `BLOCKED`。profile 默认 `error`，项目可设 `profile.mode=warn` 降为警告；soft 只提示，不挡。`--only` 是单规则探针，绕过递进门。
@@ -46,8 +48,8 @@ description: 可判定的自审清单。哲学法官的两个关口——审规�
 软审查仍必须先判：**这是“未采用标准”（软红），不是“不适用”**。
 
 - 有项目级豁免记录（谁批 / 原因 / 范围 / 期限）→ 按豁免处理，不报违规；
-- 没有豁免 → 要求迁移；**角色分层（Core / Variants / Load / Check）不能替代** `Interfaces/` / `Models/` / 概念实现目录；
-- 逐层映射：`Core` → `Interfaces/` + `Models/`；`Variants` → 概念实现目录；`Load` / `Check` → 边界 / 组合根，移出模块或明确模块身份。
+- 没有豁免 → 要求迁移；**角色分层（Core / Variants / Load / Check）不能替代** `Interfaces/` / 配置的原子目录（默认 `Models/`）/ 概念实现目录；
+- 逐层映射：`Core` → `Interfaces/` + 配置的原子目录；`Variants` → 概念实现目录；`Load` / `Check` → 边界 / 组合根，移出模块或明确模块身份。
 
 **软审报告第一行必须写“标准符合性”：通过 / 未采用（软红）/ 豁免（谁批、原因、范围、期限）。**
 
@@ -93,8 +95,8 @@ description: 可判定的自审清单。哲学法官的两个关口——审规�
 
 ```
 1. 具体实现图有环吗？    → META_REF_ACYCLIC_01；含 struct 的引用图环看 META_REF_ACYCLIC_02；纯接口 SCC 归软审
-2. 契约纯吗？            → META_SURFACE_01（接口只引接口/value data/外部 PureDTO）、META_DIR_CLASS_04（record/class 纯数据；struct 一律数据）、META_SURFACE_03/META_SURFACE_04（模块数据概念有接口；DTO 隔离）
-3. 行为类有接口吗？      → META_SURFACE_02；抽象类无模块也判，具体类要等模块标准；软审判“未采用标准”
+2. 契约纯吗？            → META_SURFACE_01（接口只引接口/value data/外部 PureDTO）、META_DIR_CLASS_04（可选 dataPurity）、META_SURFACE_03/META_SURFACE_04（概念编程元模块 + DTO 隔离）
+3. 行为类有接口吗？      → META_SURFACE_02（概念编程元模块，可关）；抽象类无模块也判，具体类要等模块标准；软审判“未采用标准”
 4. 字段持有了具体实现吗？→ SOFT_DESIGN_01；装饰器持 IA 接口是合法的
 5. 构造点收敛吗？        → SOFT_DESIGN_02；组合根/扩展/单一 owner
 6. 有没有 else / switch？→ 有 → early return；表达不了 → 重新抽象
@@ -220,24 +222,26 @@ $declares[$file] = $type;       // 检查器：循环里赋值，只有最后一
 
 | 规则 | 守什么 | 红了怎么改 |
 | --- | --- | --- |
-| `PROFILE_STYLE_01` | 主干里没有 `else` | 改成 early return；**early return 表达不了就重新抽象**，而不是加 else |
-| `META_NAMING_01` | 名字必须符合所属类别的范式：接口 `I` / 枚举 `E` / 特性 `Attribute` / 异常 `Exception` / 扩展类 `Extension(s)`。类别由结构认定，不由名字认定 | 改名。类别是结构判出来的，所以这条不会因为改名而自我实现 |
+| `PROFILE_STYLE_01` | **项目/个人 profile（`enable.noElse`）**：主干里没有 `else` | 改成 early return；**early return 表达不了就重新抽象**，而不是加 else |
+| `PROFILE_STYLE_04` | **项目/个人 profile（`enable.noSwitch`）**：主干里没有 `switch` 语句；默认关闭，开启才判 | 用类型/多态或模式匹配；它属于团队风格，不是 C# 标准 |
+| `META_NAMING_01` | **项目 naming profile**：接口 `I` / 枚举 `E` / 特性 `Attribute` / 异常 `Exception` / 扩展类 `Extension(s)`。类别由结构认定，不由名字认定；`E` 前缀由 `naming.enum.prefix` 配置，可关闭 | 改名；项目可关闭 naming stage 或改前缀。类别仍是结构判出来的 |
 | `META_NAMING_02` | UE 家族前缀：沿基类链走到工程外那个名字，首字母是 A/U/F/S/T 时，本类型名字首字母必须相同。**只对 UE 工程生效**——工程里没有 UE 根类型（`AActor` / `UObject` / `FTableRowBase` …）就按不适用跳过 | 改名。判据是基类链，不是手写家族表；接口与枚举由 `META_NAMING_01` 管，这里不重复报 |
-| `PROFILE_STYLE_02` | 注释只许是结构化追溯记录（全项目，不只主干）：`// [作者 日期 …] 原因`。括号里按空格切，字段表封闭，作者与项目一致，日期 `YYYY-MM-DD`，括号后必须有原因 | 要么删掉；要么写成 `// [wlxms 2026-10-18] 原因`。豁免写进括号：`waive=<规则id> why=<data/serialization/plumbing>` |
+| `PROFILE_STYLE_02` | **项目 profile（`enable.comments`）**：注释只许是结构化追溯记录（全项目，不只主干）：`// [作者 日期 …] 原因`。括号里按空格切，字段表封闭，作者与项目一致，日期 `YYYY-MM-DD`，括号后必须有原因 | 要么删掉；要么写成 `// [wlxms 2026-10-18] 原因`。豁免写进括号：`waive=<规则id> why=<data/serialization/plumbing>`；不要求这套格式时关掉 `enable.comments` |
 | `PROFILE_STYLE_03` | 超过 20 行的方法 / 类，内部至少有一行空行 | 按用途切成组，组与组之间空一行。**切不出组才是信号**——二十行还切不出边界，通常说明该重新抽象，而不是往中间插一行空白稀释它 |
+| `PROFILE_FILE_01` | 语言级 opt-in：`profiles.<lang>.oneTypePerFile` 开启后，一个文件只能有一个 top-level `class` / `record`；嵌套类型不计数，`partial` 同名声明算同一个类型；**同名泛型伴生类（`Foo` + `Foo<T>`）默认豁免**，不同名的 `Bar<T>` 仍算第二个类型。默认关闭，关闭时规则不运行 | 启用方式见 `.phicoding/adapter.json` 的 `profiles.cs.options.oneTypePerFile`；需要数其它类型时用对象形式配 `kinds`；要关闭泛型豁免设 `exemptGenericSameName: false` |
 | `META_SURFACE_01` | 接口只引用接口 / value data（struct·enum）/ 外部 PureDTO；模块内 class 数据只引其接口；不引用具体或抽象行为类 | 把接口签名里的具体实现换成接口；value data 可保留；外部配置 DTO 只作为已知数据结构引用；模块内 class 数据移到 `Config/` 或抽接口 |
-| `META_DIR_CLASS_04` | `record` / 无行为 `sealed class` 只能有字段、自动属性、构造；数据字段只能引用纯数据。**`struct` / `record struct` 一律算数据**，带方法也不归这条 | 去掉 record/class 里的方法/接口/基类；需要行为就升成接口 + 实现。struct 的行为归单独的软审规则，不逼它加接口 |
-| `META_SURFACE_02` | 模块内每个行为类（抽象或具体）都实现至少一个接口；数据/工具/扩展/组合根除外。**基类不在 facts 内（外部/生成基类）时跳过未判，不判红**；没有模块时仍判抽象类 | 抽能力接口；外部基类无法证明接口时补项目级豁免/软审；**不是删掉类** |
-| `META_SURFACE_03` | 模块内 class 数据概念必须有接口；`Config/` / `Configs/` 下的外部 PureDTO 不要求接口 | 给模块数据概念抽接口；如果它只是配置 DTO，移到 `Config/` 或 `Configs/`，不要留在模块内 |
+| `META_DIR_CLASS_04` | **可选项目 profile（`enable.dataPurity`）**：`record` / 无行为 `sealed class` 只能有字段、自动属性、构造；数据字段只能引用纯数据。默认关闭，不是通用 C# 要求 | 去掉 record/class 里的方法/接口/基类；需要行为就升成接口 + 实现。struct 的行为归单独的软审规则，不逼它加接口 |
+| `META_SURFACE_02` | **概念编程元模块（`enable.conceptProgramming`）**：模块内每个行为类（抽象或具体）都实现至少一个接口；数据/工具/扩展/组合根除外。**基类不在 facts 内（外部/生成基类）时跳过未判，不判红**；没有模块时仍判抽象类 | 抽能力接口；外部基类无法证明接口时补项目级豁免/软审；**不是删掉类**；关闭概念编程模块就不判 |
+| `META_SURFACE_03` | **概念编程元模块（`enable.conceptProgramming`）**：模块内 class 数据概念必须有接口；`Config/` / `Configs/` 下的外部 PureDTO 不要求接口 | 给模块数据概念抽接口；如果它只是配置 DTO，移到 `Config/` 或 `Configs/`，不要留在模块内；关闭概念编程模块就不判 |
 | `META_SURFACE_04` | PureDTO 只能引用基础类型、自身 DTO 或其他外部数据，不能引用模块内类型 | 把 DTO 里的模块类型换成 DTO 自己的基础字段，转换放到 Loader/边界 |
-| `META_REF_LEVEL_01` | **全域硬判，接受显式 waive**：先算实现契约（接口 + 基类契约面，递归闭包）要求的 `required` 引用；只判实现自己多出来的 `delta` 引用。delta 出现比 required 更具体的同族类型红；`new` 是 creates 跳过；契约要求的泛型实参、参数、基类契约类型都是基线。waive 只豁免写了它的类型，摘要记录 plumbing 数量 | 把 delta 里的具体依赖换成契约类型；真正需要的能力抽接口。`RuleRoom` 的 `IStore` 来自契约就算基线，自己新增的 `RoomStore` 才是红；UE 子系统按具体类型注册属于可登记 plumbing 豁免 |
+| `META_REF_LEVEL_01` | **全域硬判，接受显式 waive**：先算实现契约（接口 + 基类契约面，递归闭包）要求的 `required` 引用；只判实现自己多出来的 `delta` API 引用。delta 出现比 required 更具体的同族类型红；**基类契约带上的 `required` 引用会从派生类的基线里移除，派生类只对重新计算后的剩余引用判等级**；直接实现的接口仍判；字段/属性/事件存储归 `SOFT_DESIGN_01` 软审；`new` 是 creates 跳过；契约要求的泛型实参、参数、基类契约类型都是基线。waive 只豁免写了它的类型，摘要记录 plumbing 数量 | 把 delta 里的具体依赖换成契约类型；真正需要的能力抽接口。`RuleRoom` 的 `IStore` 来自契约就算基线，自己新增的 `RoomStore` 才是红；UE 子系统按具体类型注册属于可登记 plumbing 豁免 |
 | `SOFT_DESIGN_01` | 只判**根实现/聚合根**（多个根实现各自判）：字段/属性/事件不能持有本模块具体实现；装饰器持 `IA` 接口是合法的 | 字段改存接口；构造参数注入接口；具体实现只在构造边界创建后立即转成接口 |
 | `SOFT_DESIGN_02` | 具体类型的 `new` 必须收敛到一个 owner/组合根；第二个构造点即红；扩展类可使用具体类 | 把构造移进工厂 / 组合根 / 单一 owner；构造后以接口保存 |
 | `META_REF_ACYCLIC_01` | 具体实现图（字段/属性/构造）无环；接口自引用与纯嵌套树不算 | 用接口、事件、标识或中介者打断具体环；不要把接口环当具体环 |
 | `META_REF_ACYCLIC_02` | 含 struct 的**引用图**无环：`IA -> struct -> IB -> IA` 也红；纯接口环仍归软审 | 把 struct 的引用改向、上移接口或拆掉回边；struct 是数据，但数据边也参与依赖图 |
-| `META_DIR_CLASS_02` | 接口模块的结构：`Interfaces/` 只放接口；top-level `struct` / `record struct` / `enum` 必须放本模块 `Models/`；抽象类不得在 `Interfaces/`。没有 `Interfaces/` 时按改动文件共享根推断模块，接口不在推断模块的 `Interfaces/` 下也红 | 把非接口搬出 `Interfaces/`；数据原子搬到本模块 `Models/`；抽象类放模块根或概念实现目录。**delegate 不在底座 facts 里，这条看不到 → 归软审**；只有改动范围里连模块目录都推不出才 skip，**软审仍判“未采用标准”** |
+| `META_DIR_CLASS_02` | 接口模块的结构：`Interfaces/` 只放接口；top-level `struct` / `record struct` / `enum` 必须放本模块配置的原子目录（默认 `Models/`，可配 `Enums/` 等）；**原子目录与模块无关：没有 `Interfaces/` 时以项目根为基准继续检查**；嵌套 enum 按 `placement.nested.enum` 判，`scope=containing` 时只能被包含类型内部使用；抽象类不得在 `Interfaces/`。没有 `Interfaces/` 时按改动文件共享根推断模块，接口不在推断模块的 `Interfaces/` 下也红 | 把非接口搬出 `Interfaces/`；数据原子搬到配置的原子目录；嵌套 enum 外泄就改成 top-level 放原子目录，或收紧使用范围。**delegate 不在底座 facts 里，这条看不到 → 归软审**；接口模块推不出来时只影响接口落点，不影响原子目录检查 |
 | `META_SURFACE_05` | 模块单向：**父 → 子禁止**（接口、具体都不行）；模块 → 模块外边界 / 组合根禁止；跨模块不得成环；子 → 祖先只允许祖先 `Interfaces/` 下的接口，引用祖先具体类 / Models / Config / 聚合根类都红；子模块自己的 `Interfaces/` 引祖先 `Interfaces/` 合法 | 把反向依赖改成接口 / 事件 / 标识；父模块只保留接口；子模块只向上看 Interfaces；组合根放在模块树外 |
-| `META_DIR_CLASS_03` | 同一目录里同一概念接口的实现 ≥ 2，且还混着别的接口实现 → 这些实现必须拆到概念实现目录；不同模块各算各的目录 | 把该接口的实现移到从接口名派生的概念目录（`IAdditivePass` → `AdditivesPass/` 或 `Additives/`）。`Models/` 数据域暂豁免；**GCD 落点、外部概念路径、抽象类“对应目录”归软审** |
+| `META_DIR_CLASS_03` | 同一目录里同一概念接口的实现 ≥ 2，且还混着别的接口实现 → 这些实现必须拆到概念实现目录；不同模块各算各的目录 | 把该接口的实现移到从接口名派生的概念目录（`IAdditivePass` → `AdditivesPass/` 或 `Additives/`）。配置的 `Models/` / 原子目录是数据域，暂豁免；**GCD 落点、外部概念路径、抽象类“对应目录”归软审** |
 | `META_DIR_CLASS_01` | 类型引用图的每个 SCC 必须落在同一个**代码目录**；**同目录文件 SCC 允许，跨目录红；根目录不豁免**；**目录规则忽略 struct / record struct**，struct 参与的类型环由 `META_REF_ACYCLIC_02` 负责 | 把 SCC 整体收进一个目录；跨目录 SCC 不是改一条边能修的 |
 | `META_DIR_ACYCLIC_01` | **目录单元图无环**：按最近公共父目录取 file/dir 单元；直属文件是 file 单元，子目录是 dir 单元；file↔file 交给 SCC；至少一边是 dir 的边做完整 SCC；根目录不整体建节点、不整体豁免；单向合法 | 把目录单元之间互相依赖拆成单向：抽接口、事件、标识，或合并目录；文件之间的环由 `META_DIR_CLASS_01` 判 |
 | `1000-` 以上 | 项目自带，看规则文件头注释 | — |

@@ -14,10 +14,19 @@
 //
 // 枚举本身已不在硬检查里（归法官软审），但一旦出现，它的命名范式仍然要守。
 import { readFileSync } from 'node:fs'
+import { hasPrefix, hasSuffix, namingPolicy } from '../../naming.mjs'
 
 const args = process.argv.slice(2)
 
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
+let config = {}
+try {
+  config = JSON.parse(readFileSync(args[args.indexOf('--config') + 1], 'utf8'))
+} catch {
+  // Defaults are the universal naming paradigm; an absent project policy is not
+  // a pass, but the naming rule still has a well-defined default to judge.
+}
+const naming = namingPolicy(config, 'cs')
 
 const byName = new Map()
 for (const type of facts.types) if (!byName.has(type.name)) byName.set(type.name, type)
@@ -45,22 +54,22 @@ const at = (type) => `${type.file}:${type.line}`
 
 for (const type of facts.types) {
   if (type.kind === 'interface') {
-    if (!/^I[A-Z]/.test(type.name)) hits.push(`${at(type)}  接口 ${type.name} 要以 I 开头`)
+    if (!hasPrefix(type.name, naming.interface.prefix)) hits.push(`${at(type)}  接口 ${type.name} 要以 ${naming.interface.prefix} 开头`)
     continue
   }
 
   if (type.kind === 'enum') {
-    if (!/^E[A-Z]/.test(type.name)) hits.push(`${at(type)}  枚举 ${type.name} 要以 E 开头`)
+    if (!hasPrefix(type.name, naming.enum.prefix)) hits.push(`${at(type)}  枚举 ${type.name} 要以 ${naming.enum.prefix} 开头`)
     continue
   }
 
   const root = baseRoot(type)
   if (root === 'Attribute') {
-    if (!type.name.endsWith('Attribute')) hits.push(`${at(type)}  特性 ${type.name} 要以 Attribute 结尾`)
+    if (!hasSuffix(type.name, naming.attribute.suffix)) hits.push(`${at(type)}  特性 ${type.name} 要以 ${naming.attribute.suffix} 结尾`)
     continue
   }
   if (root !== null && root.endsWith('Exception')) {
-    if (!type.name.endsWith('Exception')) hits.push(`${at(type)}  异常 ${type.name} 要以 Exception 结尾`)
+    if (!hasSuffix(type.name, naming.exception.suffix)) hits.push(`${at(type)}  异常 ${type.name} 要以 ${naming.exception.suffix} 结尾`)
     continue
   }
 
@@ -68,14 +77,14 @@ for (const type of facts.types) {
   const targets = [...new Set((type.members ?? []).map((member) => bare(member.extensionOf)).filter(Boolean))]
   if (targets.length === 0) continue
 
-  const named = /Extensions?$/.test(type.name)
+  const named = naming.extension.suffixes.some((suffix) => type.name.endsWith(suffix))
   if (!named) {
-    hits.push(`${at(type)}  扩展类 ${type.name} 要以 Extension / Extensions 结尾`)
+    hits.push(`${at(type)}  扩展类 ${type.name} 要以 ${naming.extension.suffixes.join(' / ')} 结尾`)
     continue
   }
   // 只扩展一个本工程类型时，名字还要说清扩展的是谁。目标在 BCL 里
   // （IEnumerable 之类）时不强求——那样会逼出 EnumerableListArrayExtensions。
-  if (targets.length === 1 && byName.has(targets[0]) && !type.name.startsWith(targets[0])) {
+  if (naming.extension.singleTargetMustLead && targets.length === 1 && byName.has(targets[0]) && !type.name.startsWith(targets[0])) {
     hits.push(`${at(type)}  扩展类 ${type.name} 只扩展 ${targets[0]}，名字要以 ${targets[0]} 开头`)
   }
 }

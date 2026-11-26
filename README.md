@@ -9,10 +9,11 @@
 | 层 | 是什么 | 在哪 |
 | --- | --- | --- |
 | **软性** | 6 个技能，常驻（每个会话都在） | [`dsh-plugins/dsh-phicoding/skills/`](dsh-plugins/dsh-phicoding/skills) |
-| **硬性** | 一条命令跑 20 条语言级规则 + 项目自带规则：元规则递进硬审，profile 半硬，soft 只审查 | [`dsh-plugins/dsh-phicoding/checks/`](dsh-plugins/dsh-phicoding/checks) |
+| **硬性** | 一条命令跑 20 条常驻语言级规则 + 可选 `PROFILE_FILE_01` + 项目自带规则：元规则递进硬审，profile 半硬，soft 只审查 | [`dsh-plugins/dsh-phicoding/checks/`](dsh-plugins/dsh-phicoding/checks) |
 | **执行契约** | 插件内 [`AGENTS.md`](dsh-plugins/dsh-phicoding/AGENTS.md) 强制“先读技能、写完跑检查”；Copilot 用 `.github/copilot-instructions.md` | [`dsh-plugins/dsh-phicoding/`](dsh-plugins/dsh-phicoding) |
+| **项目适配层** | `.phicoding/adapter.json`：补语义事实、命名策略、强度、规则覆盖/新增/装饰；规则本体不认识引擎 | [`checks/adapters.mjs`](dsh-plugins/dsh-phicoding/checks/adapters.mjs) |
 
-检查器内部按 `meta → profile → soft` 分层：六个 meta 阶段顺序执行，前一个阶段红了，后面的 meta 阶段与 profile/soft 标 `BLOCKED`，不会把未跑的规则报成绿。
+检查器内部按 `meta → profile → soft` 分层：六个 meta 阶段顺序执行，前一个阶段红了，后面的 meta 阶段与 profile/soft 标 `BLOCKED`，不会把未跑的规则报成绿。项目适配层只改变 facts、命名策略、规则组合与强度，不会把 `off` / `WARN` / `adapter suppressed` 折叠成 `green`。
 
 ## 装进 VS Code Copilot（全局，一条命令）
 

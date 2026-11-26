@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The tier manifest must cover every built-in rule, in one place and in order.
 // A rule that silently falls out of the manifest would bypass the progressive gate.
-import { allCatalogRules, classify, META_STAGES, PROFILE_RULES, SOFT_RULES } from './tiers.mjs'
+import { allCatalogRules, canReplaceRule, classify, META_STAGES, PROFILE_RULES, SOFT_RULES } from './tiers.mjs'
 
 const results = []
 const expect = (name, ok, detail = '') => {
@@ -26,6 +26,8 @@ const builtIn = [
   'META_NAMING_02',
   'PROFILE_STYLE_02',
   'PROFILE_STYLE_03',
+  'PROFILE_STYLE_04',
+  'PROFILE_FILE_01',
   'META_DIR_CLASS_02',
   'META_SURFACE_05',
   'META_DIR_CLASS_03',
@@ -47,6 +49,8 @@ expect('SOFT_DESIGN_01/SOFT_DESIGN_02 are soft', ['SOFT_DESIGN_01', 'SOFT_DESIGN
 expect('unknown project rule is profile, not meta', classify('X-99-project-rule').tier === 'profile' && classify('X-99-project-rule').unclassified === true)
 expect('profile has no duplicate rule', new Set(PROFILE_RULES).size === PROFILE_RULES.length)
 expect('soft has no duplicate rule', new Set(SOFT_RULES).size === SOFT_RULES.length)
+expect('structural rules are protected from adapter replacement', ['META_REF_ACYCLIC_01', 'META_REF_LEVEL_01', 'META_DIR_ACYCLIC_01', 'META_DIR_CLASS_02', 'META_DIR_CLASS_03'].every((id) => !canReplaceRule(id)))
+expect('naming/profile/soft rules are replaceable by an adapter', ['META_NAMING_01', 'META_NAMING_02', 'PROFILE_STYLE_01', 'SOFT_DESIGN_01'].every((id) => canReplaceRule(id)))
 
 const failed = results.filter((result) => !result.ok).length
 console.log('')

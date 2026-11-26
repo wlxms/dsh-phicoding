@@ -1,0 +1,44 @@
+{
+  "id": "example-ue",
+  "description": "项目适配层模板：UnrealSharp 事实 + 项目命名/强度",
+  "engine": "unreal",
+  "naming": {
+    "interface": { "prefix": "I" },
+    "enum": { "prefix": "E" },
+    "family": { "enabled": true }
+  },
+  "placement": {
+    "cs": {
+      "atoms": {
+        "enum": ["Enums"],
+        "struct": ["Models"],
+        "recordstruct": ["Models"]
+      },
+      "nested": {
+        "enum": { "allow": true, "scope": "containing" }
+      }
+    }
+  },
+  "profiles": {
+    "cs": {
+      "enable": {
+        "naming": true,
+        "directoryModel": true,
+        "conceptProgramming": true,
+        "noElse": true,
+        "noSwitch": false,
+        "comments": true,
+        "blankLines": true,
+        "dataPurity": false
+      },
+      "options": {
+        "oneTypePerFile": true
+      }
+    }
+  },
+  "rules": {
+    "severity": {
+      "META_NAMING_02": "warn"
+    }
+  }
+}

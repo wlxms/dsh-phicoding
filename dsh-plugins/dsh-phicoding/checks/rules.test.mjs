@@ -63,6 +63,7 @@ const member = (name, kind, typeName, line = 3, extra = {}) => ({
   parameters: extra.parameters ?? [],
   access: extra.access ?? 'public',
   line,
+  endLine: extra.endLine ?? line,
   hasBody: extra.hasBody ?? false,
   isStatic: extra.isStatic ?? false,
   extensionOf: extra.extensionOf ?? null
@@ -322,8 +323,47 @@ const facts = (types, references = [], files = []) => ({
     ref('Derived', 'IProduct', 5, 'Combat/Impl'),
     ref('Derived', 'ConcreteProduct', 6, 'Combat/Impl')
   ])
-  expect('META_REF_LEVEL_01 base contract is baseline; private base member is not', () =>
-    checkReferenceDegree(buildModel(model)), { findings: 1, match: /Derived/ })
+  expect('META_REF_LEVEL_01 ignores the base-inherited interface; private base member does not force it', () =>
+    checkReferenceDegree(buildModel(model)), { findings: 0 })
+}
+
+// A base class forces the interface view into every derived type. That forced
+// reference must be removed from both baseline and recomputed target set; the
+// concrete field the derived type adds is then judged only among its own refs.
+{
+  const target = type('ISubjectTarget', 'interface', 'Interfaces')
+  const concrete = type('UWYSubjectTarget', 'class', 'Subjects', { base: 'ISubjectTarget' })
+  const base = type('UWYSubjectFraming', 'abstract', 'Framings', {
+    isAbstract: true,
+    members: [member('Subjects', 'property', 'ISubjectTarget', 3)]
+  })
+  const framing = type('UWYAttentionFraming', 'class', 'Framings', {
+    base: 'UWYSubjectFraming',
+    members: [
+      member('SubjectA', 'property', 'UWYSubjectTarget', 4),
+      member('SubjectB', 'property', 'UWYSubjectTarget', 5)
+    ]
+  })
+  const model = facts([target, concrete, base, framing], [
+    ref('UWYAttentionFraming', 'UWYSubjectTarget', 4, 'Framings'),
+    ref('UWYAttentionFraming', 'UWYSubjectTarget', 5, 'Framings')
+  ])
+  expect('META_REF_LEVEL_01 ignores base-inherited interface; recomputes the derived set', () =>
+    checkReferenceDegree(buildModel(model)), { findings: 0 })
+}
+
+// A directly implemented interface is still the owner's own contract; only the
+// base-inherited interface is removed from the recomputed set.
+{
+  const root = type('IRoot', 'interface', 'Core/Interfaces')
+  const concrete = type('ConcRoot', 'class', 'Core/Impl', { base: 'IRoot' })
+  const owner = type('Owner', 'class', 'Core/Impl', { interfaces: ['IRoot'] })
+  const model = facts([root, concrete, owner], [
+    ref('Owner', 'IRoot', 4, 'Core/Impl'),
+    ref('Owner', 'ConcRoot', 5, 'Core/Impl')
+  ])
+  expect('META_REF_LEVEL_01 still flags a direct interface delta', () =>
+    checkReferenceDegree(buildModel(model)), { findings: 1, match: /Owner/ })
 }
 
 // ---- SOFT_DESIGN_01 -----------------------------------------------------------------

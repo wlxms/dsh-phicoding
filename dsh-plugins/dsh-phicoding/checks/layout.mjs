@@ -8,13 +8,14 @@
 //
 // 判据的限（规则头里也要写一遍，这里是总限）：
 //   * 底座只收 BaseTypeDeclaration：**delegate 不在 facts 里**。所以
-//     "delegate 必须放 Models" 现在判不了，归软审；接口里引用 delegate 也看不到。
+//     "delegate 必须放配置的原子目录" 现在判不了，归软审；接口里引用 delegate 也看不到。
 //   * 类型解析按名字。两个同名类型会让规则认错人 —— 需要名字的检查直接 exit 3，
 //     不猜（与 0750 同一条纪律）。
 //   * 聚合根 / 组合根的识别只能靠命名或清单，是软判；H5/H6 不在这里硬判。
 //   * GCD 落点、外部概念路径、抽象类"对应目录"的目录名派生都带命名判断，先软审。
 
 import { readFileSync } from 'node:fs'
+import { isInDataArea, isInDirs, placementPolicy } from './placement.mjs'
 
 const INTERFACE = 'interface'
 const CLASS = new Set(['class', 'record'])
@@ -57,12 +58,17 @@ export const isInterfaceType = (type) => type.kind === INTERFACE
 
 export const isClassType = (type) => CLASS.has(type.kind)
 
+export const isAbstractType = (type) =>
+  type?.isAbstract === true || type?.semantics?.abstractness === 'abstract'
+
 export const isDataAtom = (type) => DATA_ATOM.has(type.kind)
 
-export const isInInterfaces = (file, module) => {
+export const isInInterfaces = (file, module, dirs = ['Interfaces']) => {
   let segments = split(file)
   if (module && module !== '.') segments = segments.slice(split(module).length)
-  for (let at = 0; at < segments.length - 1; at++) if (segments[at] === 'Interfaces') return true
+  for (let at = 0; at < segments.length - 1; at++) {
+    if (dirs.includes(segments[at])) return true
+  }
   return false
 }
 
@@ -237,13 +243,6 @@ export function layout(facts, changedFiles) {
   }
 }
 
-// 数据原子必须在本模块的 Models/ 下（模块路径之后的目录里出现 Models）。
-export function isInModels(file, module) {
-  if (module == null) return false
-  const rest = module === '.' ? split(file) : split(file).slice(split(module).length)
-  return rest.slice(0, -1).includes('Models')
-}
-
 // 接口的祖先闭包（含自己）。
 export function interfaceAncestors(name, state, seen = new Set()) {
   const found = new Set()
@@ -275,10 +274,10 @@ export function implementedInterfaces(type, state) {
   return found
 }
 
-export function conceptInterfaces(state) {
+export function conceptInterfaces(state, dirs = ['Interfaces']) {
   return new Map(
     (state.facts.types ?? [])
-      .filter((type) => type.kind === INTERFACE && isInInterfaces(type.file) && state.moduleOf(type.file))
+      .filter((type) => type.kind === INTERFACE && isInInterfaces(type.file, undefined, dirs) && state.moduleOf(type.file))
       .map((type) => [type.name, type])
   )
 }
@@ -292,42 +291,90 @@ export function maximalConcepts(type, concepts, state) {
 const SKIP_DUPLICATED = (duplicated) =>
   `有同名类型（${[...duplicated].join(', ')}）—— 按名字查会串，先消除同名，跳过，不算通过。`
 
-// ---- H1 · 结构 -------------------------------------------------------------
-export function checkStructure(facts, changedFiles) {
-  const state = layout(facts, changedFiles)
-  if (state.modules.length === 0) return { skip: SKIP }
+const inContainingType = (name, containing, byName) => {
+  let current = byName.get(name)
+  const seen = new Set()
+  while (current && !seen.has(current.name)) {
+    if (current.name === containing) return true
+    seen.add(current.name)
+    current = byName.get(current.containing)
+  }
+  return false
+}
 
+const outsideNestedUses = (facts, type, byName) => {
+  const allowed = type.containing
+  if (!allowed) return []
+  return (facts.references ?? []).filter(
+    (ref) => ref.to === type.name && ref.from !== type.name && !inContainingType(ref.from, allowed, byName)
+  )
+}
+
+// ---- H1 · 结构 -------------------------------------------------------------
+export function checkStructure(facts, changedFiles, context = {}) {
+  const state = layout(facts, changedFiles)
+  const policy = context.placement ?? placementPolicy({}, 'cs')
   const findings = []
+  const notes = []
+  let interfaceUnjudged = false
+  if (state.modules.length === 0) {
+    notes.push('没有 Interfaces/ 模块：接口落点未判；数据原子按项目根检查，skip 不是通过。')
+  }
   for (const type of facts.types ?? []) {
     const module = state.moduleOf(type.file)
     if (type.kind === INTERFACE) {
-      if (module && !isInInterfaces(type.file, module)) {
-        findings.push(`${type.file}:${type.line}  接口 ${type.name} 不在 Interfaces/ 下（接口必须放模块的 Interfaces/）`)
+      if (module && !isInInterfaces(type.file, module, policy.interfaces)) {
+        findings.push(`${type.file}:${type.line}  接口 ${type.name} 不在 ${policy.interfaces.join(' / ')}/ 下（接口必须放模块的接口目录）`)
+      } else if (!module) {
+        interfaceUnjudged = true
       }
       continue
     }
-    if (module && isInInterfaces(type.file, module)) {
-      findings.push(`${type.file}:${type.line}  Interfaces/ 下只能放接口：发现 ${type.kind} ${type.name}`)
+    if (module && isInInterfaces(type.file, module, policy.interfaces)) {
+      findings.push(`${type.file}:${type.line}  ${policy.interfaces.join(' / ')}/ 下只能放接口：发现 ${type.kind} ${type.name}`)
       continue
     }
-    if (type.containing) continue // 嵌套类型按实现内部处理，归软审
+    if (type.containing) {
+      if (!isDataAtom(type)) continue
+      const nested = policy.nested?.[type.kind]
+      if (!nested?.allow) {
+        findings.push(`${type.file}:${type.line}  ${type.kind} ${type.name} 不允许嵌套；请放到 ${policy.atoms[type.kind].join(' / ')}/`)
+        continue
+      }
+      if (nested.scope === 'containing') {
+        const outside = outsideNestedUses(facts, type, state.byName)
+        for (const ref of outside) {
+          findings.push(
+            `${ref.file}:${ref.line}  嵌套 ${type.kind} ${type.name} 只能在其包含类型 ${type.containing} 内使用；${ref.from} 在外部引用`
+          )
+        }
+      }
+      continue
+    }
     if (!isDataAtom(type)) continue
-    if (module == null) continue
-    if (!isInModels(type.file, module)) {
-      findings.push(`${type.file}:${type.line}  数据原子必须放 Models/：${type.kind} ${type.name}`)
+    // The inferred module is only a local grouping for scoped runs; placement is
+    // a project/language policy, not a module rule. With declared Interfaces/
+    // modules, an atom must be inside its own module; without them, project root
+    // is the stable base.
+    const atomModule = state.declared.length > 0 && module ? module : '.'
+    const dirs = policy.atoms[type.kind]
+    if (!isInDirs(type.file, atomModule, dirs)) {
+      findings.push(`${type.file}:${type.line}  数据原子必须放 ${dirs.join(' / ')}/：${type.kind} ${type.name}（placement.${type.kind}）`)
     }
   }
-  return { findings }
+  if (interfaceUnjudged) notes.push('有接口不在可识别的模块内：接口落点未判，不能算通过。')
+  return { findings, notes }
 }
 
 // ---- H2 · 概念层引用集合 ---------------------------------------------------
-export function checkReferences(facts, changedFiles) {
+export function checkReferences(facts, changedFiles, context = {}) {
   const state = layout(facts, changedFiles)
   if (state.modules.length === 0) return { skip: SKIP }
   if (state.duplicated.size > 0) return { skip: SKIP_DUPLICATED(state.duplicated) }
 
-  const concepts = conceptInterfaces(state)
-  if (concepts.size === 0) return { skip: 'Interfaces/ 下没有接口可判：跳过，不算通过。' }
+  const policy = context.placement ?? placementPolicy({}, 'cs')
+  const concepts = conceptInterfaces(state, policy.interfaces)
+  if (concepts.size === 0) return { skip: '接口目录下没有接口可判：跳过，不算通过。' }
 
   const findings = []
   for (const type of concepts.values()) {
@@ -351,11 +398,12 @@ export function checkReferences(facts, changedFiles) {
 }
 
 // ---- H3 · 模块单向 ---------------------------------------------------------
-export function checkModuleEdges(facts, changedFiles) {
+export function checkModuleEdges(facts, changedFiles, context = {}) {
   const state = layout(facts, changedFiles)
   if (state.modules.length === 0) return { skip: SKIP }
   if (state.duplicated.size > 0) return { skip: SKIP_DUPLICATED(state.duplicated) }
 
+  const policy = context.placement ?? placementPolicy({}, 'cs')
   const findings = []
   const edges = new Map() // `${from}>${to}` -> 第一条引用
 
@@ -381,7 +429,7 @@ export function checkModuleEdges(facts, changedFiles) {
       // A child module may only look upward at the ancestor's interface
       // surface. Implementations, Models, Config DTOs and concrete aggregate
       // roots are not part of that surface.
-      if (target.kind !== INTERFACE || !isInInterfaces(target.file, to)) {
+      if (target.kind !== INTERFACE || !isInInterfaces(target.file, to, policy.interfaces)) {
         findings.push(
           `${ref.file}:${ref.line}  子模块 ${from} 引用了祖先模块 ${to} 的${target.kind} ${target.name}（子模块只能引用祖先 Interfaces/ 下的接口）`
         )
@@ -566,12 +614,13 @@ export function checkSiblingAcyclic(facts) {
 }
 
 // ---- H4a · 同接口多实现拆分 ------------------------------------------------
-export function checkPlacement(facts, changedFiles) {
+export function checkPlacement(facts, changedFiles, context = {}) {
   const state = layout(facts, changedFiles)
   if (state.modules.length === 0) return { skip: SKIP }
   if (state.duplicated.size > 0) return { skip: SKIP_DUPLICATED(state.duplicated) }
 
-  const concepts = conceptInterfaces(state)
+  const policy = context.placement ?? placementPolicy({}, 'cs')
+  const concepts = conceptInterfaces(state, policy.interfaces)
   if (concepts.size === 0) {
     // With inferred modules there may simply be no concept interface yet. That is
     // not an optional input: META_DIR_CLASS_02 already reports interfaces outside Interfaces/.
@@ -580,11 +629,11 @@ export function checkPlacement(facts, changedFiles) {
 
   const byDirectory = new Map() // dir -> [{ type, maximal }]
   for (const type of facts.types ?? []) {
-    if (!isClassType(type) || type.isAbstract) continue
+    if (!isClassType(type) || isAbstractType(type)) continue
     const module = state.moduleOf(type.file)
     if (module == null) continue
-    if (isInInterfaces(type.file, module)) continue
-    if (isInModels(type.file, module)) continue // Models 是数据域，先豁免（软审另行处理）
+    if (isInInterfaces(type.file, module, policy.interfaces)) continue
+    if (isInDataArea(type.file, module, policy)) continue // 数据域，先豁免（软审另行处理）
     const maximal = maximalConcepts(type, concepts, state)
     if (maximal.length === 0) continue
     const segments = split(type.file)
@@ -625,7 +674,7 @@ const CHECKS = {
   'sibling-acyclic': checkSiblingAcyclic
 }
 
-export function run(name) {
+export function run(name, language = 'cs') {
   const check = CHECKS[name]
   if (!check) {
     console.error(`layout.mjs: 未知检查 ${name}`)
@@ -654,11 +703,29 @@ export function run(name) {
       process.exit(2)
     }
   }
-  const result = check(facts, changedFiles)
+  const configAt = args.indexOf('--config')
+  let config = {}
+  if (configAt >= 0) {
+    try {
+      config = JSON.parse(readFileSync(args[configAt + 1], 'utf8'))
+    } catch {
+      // A missing config is not a pass; placement defaults are still universal.
+      // A malformed config with a placement block fails below, not silently.
+    }
+  }
+  let placement
+  try {
+    placement = placementPolicy(config, language)
+  } catch (error) {
+    console.error(`layout.mjs: placement 配置错误：${error.message}`)
+    process.exit(2)
+  }
+  const result = check(facts, changedFiles, { placement })
   if (result.skip) {
     console.log(result.skip)
     process.exit(3)
   }
+  for (const note of result.notes ?? []) console.log(note)
   for (const line of result.findings) console.log(line)
   process.exit(result.findings.length === 0 ? 0 : 1)
 }

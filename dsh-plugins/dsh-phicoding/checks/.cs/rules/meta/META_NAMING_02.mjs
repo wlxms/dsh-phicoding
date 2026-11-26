@@ -20,21 +20,18 @@
 // 否则一个普通 C# 工程里 `class Monster : AIBase` 会被当成 Actor 族误报。
 // UE 根类型是一张固定的短清单：它判的是"这个工程用不用 UE"，不是"每个类型是什么"。
 import { readFileSync } from 'node:fs'
-
-// 这张表是**闸门**，不是映射表：只用来回答"这是不是一个 UE 工程"。
-// 家族前缀永远从基类链终端的首字母推，不由这张表决定。
-const UE_ROOTS = new Set([
-  'AActor', 'ACharacter', 'APawn', 'AController', 'APlayerController', 'APlayerState',
-  'AGameModeBase', 'AGameStateBase', 'AInfo', 'AHUD', 'AVolume', 'ATriggerBase',
-  'UObject', 'UActorComponent', 'USceneComponent', 'UUserWidget', 'UWidget',
-  'UBlueprintFunctionLibrary', 'UInterface', 'UWorld', 'UGameInstance',
-  'UDataAsset', 'USaveGame', 'UPrimaryDataAsset',
-  'FTableRowBase',
-  'SWidget', 'SCompoundWidget', 'SLeafWidget', 'SPanel'
-])
+import { namingPolicy } from '../../naming.mjs'
 
 const args = process.argv.slice(2)
 const facts = JSON.parse(readFileSync(args[args.indexOf('--facts') + 1], 'utf8'))
+let config = {}
+try {
+  config = JSON.parse(readFileSync(args[args.indexOf('--config') + 1], 'utf8'))
+} catch {
+  // Defaults keep the universal UE family rule; a project adapter may replace
+  // the root list or disable the family rule.
+}
+const naming = namingPolicy(config, 'cs')
 
 const byName = new Map()
 for (const type of facts.types) if (!byName.has(type.name)) byName.set(type.name, type)
@@ -73,15 +70,20 @@ function terminalBase(type) {
   }
 }
 
-const familyOf = (terminal) => (/^[AUFST][A-Z]/.test(terminal ?? '') ? terminal[0] : null)
+const familyOf = (terminal) => (naming.family.prefixes.includes(terminal?.[0]) ? terminal[0] : null)
 
 // 闸门：工程里必须真的出现过 UE 根类型，这条才有意义。
 const terminals = new Map()
+const roots = new Set(naming.family.roots)
 let ueProject = false
 for (const type of facts.types) {
   const terminal = terminalBase(type)
   terminals.set(type.name, terminal)
-  if (terminal && UE_ROOTS.has(terminal)) ueProject = true
+  if (terminal && roots.has(terminal)) ueProject = true
+}
+if (!naming.family.enabled) {
+  console.log('项目适配层关闭了 family 命名规则——跳过，不算通过。')
+  process.exit(3)
 }
 if (!ueProject) {
   console.log('工程里没有 UE 根类型（AActor / UObject / FTableRowBase …）—— 这条只对 UE 工程适用，跳过，不算通过。')

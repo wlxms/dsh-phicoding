@@ -46,7 +46,18 @@ node <dsh-phicoding>/checks/phicoding.mjs --root <工程根>
 
 规则红了先改代码和结构；规则本身有错，必须单独说明理由并补正反例，不能顺手改绿。
 
-## 4. 交付前自审
+## 4. 项目适配层
+
+工程若有 `.phicoding/adapter.json`，它只提供**项目事实、命名策略、强度、规则扩展和装饰**：
+
+- 可以补语义事实（例如 UE 的 `UClass(ClassFlags.Abstract)`），不改通用规则；
+- 可以调强度，但 `off` 不是通过；
+- 可以替换允许覆盖的规则、增加项目规则、用 decorator 抑制 findings，但必须留下 trace；
+- `adapter suppressed`、`WARN`、`off` 都要在报告里如实出现。
+
+不要为了适配层去改通用规则，也不要把适配层当作隐藏 waiver。
+
+## 5. 交付前自审
 
 必须读 `phicoding-check`，按它的两个关口检查：
 

@@ -331,9 +331,14 @@ foreach (var fileGroup in decls.GroupBy(d => d.File).OrderBy(g => g.Key, StringC
             @namespace = (decl.Parent as BaseNamespaceDeclarationSyntax)?.Name.ToString(),
             kind = decl.Kind().ToString().Replace("Declaration", "").ToLowerInvariant(),
             accessibility = decl.Modifiers.Any(SyntaxKind.PublicKeyword) ? "public" : "internal",
+            arity = (decl as TypeDeclarationSyntax)?.TypeParameterList?.Parameters.Count ?? 0,
             isAbstract = decl.Modifiers.Any(SyntaxKind.AbstractKeyword),
             isSealed = decl.Modifiers.Any(SyntaxKind.SealedKeyword),
             isStatic = decl.Modifiers.Any(SyntaxKind.StaticKeyword),
+            attributes = decl.AttributeLists
+                .SelectMany(list => list.Attributes)
+                .Select(attribute => attribute.ToString())
+                .ToArray(),
             file = relative,
             line,
             endLine,

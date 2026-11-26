@@ -15,7 +15,7 @@
     "url": "https://github.com/wlxms/dsh-phicoding.git",
     "directory": "dsh-plugins/dsh-phicoding"
   },
-  "files": ["lib", "skills", "scripts/copilot-kit", "AGENTS.md", "dsh.plugin.json", "cordis.patch.yml", "README.md", "LICENSE"],
+  "files": ["lib", "skills", "checks", "scripts/copilot-kit", "AGENTS.md", "dsh.plugin.json", "cordis.patch.yml", "README.md", "LICENSE"],
   "license": "MIT",
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
   "scripts": { "verify": "node scripts/verify-provider.mjs", "build:copilot": "node scripts/build-copilot-kit.mjs" },

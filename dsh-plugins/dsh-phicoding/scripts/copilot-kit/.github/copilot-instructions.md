@@ -17,6 +17,17 @@
 
 没有读对应技能，不许开始编辑。
 
+## 项目适配层
+
+工程若有 `.phicoding/adapter.json`，它只提供项目事实、命名策略、强度、规则扩展和装饰：
+
+- `facts` 可补语义事实；`naming` 可换项目命名策略；
+- `severity` 可把规则降为 `warn/info/off`，但 `off` 不是通过；
+- `replace` 只能替换允许覆盖的规则；结构规则受保护；
+- `add` 增加项目规则；`decorate` 抑制 findings 必须带 trace。
+
+报告里的 `off`、`WARN`、`adapter suppressed` 都是策略结果，不能当作 `green`。
+
 ## 写完后：必须跑检查
 
 从仓库根目录运行**完整检查**：

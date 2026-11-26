@@ -83,27 +83,64 @@ description: 编码与设计的总准则。任何写代码、改代码、评审�
 
 | 约束 | 判据 |
 | --- | --- |
-| No Else | 源码里搜不到 `else` |
+| No Else | **项目/个人 profile（`enable.noElse`）**：源码里搜不到 `else`。默认开，可关 |
+| No Switch | **项目/个人 profile（`enable.noSwitch`）**：默认关，开启后源码里搜不到 `switch` 语句 |
 | **长块要分组** | 超过 20 行的方法 / 类，内部至少有一行空行（`PROFILE_STYLE_03`）。空行用来分隔有意义的组，不靠它稀释一条没想清楚的线性流程 |
-
-| 引用不越档 | **META_REF_LEVEL_01 全域硬判，接受显式 waive**：实现接口/基类契约要求的引用是 `required` 基线；只判实现新增的 `delta` 引用，delta 不许比 required 更具体。`new` 是 creates 跳过；契约要求的泛型实参/参数/基类契约类型不算新增。waive 只豁免写了它的类型 |
-| 不写注释 | 除 `// [作者 日期] 原因` 追溯记录外搜不到注释 |
+| 不写注释 | **项目 profile（`enable.comments`）**：除 `// [作者 日期] 原因` 追溯记录外搜不到注释；不需要这套格式时关掉 |
 | **依赖无环** | **主干里出现 `A → B → A` 即违规。别靠肉眼判断**——跑 `phicoding --root <项目>`，有环 exit 1 |
-| **契约纯度** | 接口只引用接口/value data/PureDTO，不引用具体实现（`META_SURFACE_01`）；`struct` 一律算数据；模块内 class 数据概念必须有接口（`META_SURFACE_03`）；`record`/`class` 纯数据不带行为（`META_DIR_CLASS_04`） |
+| **契约纯度** | 接口只引用接口/value data/PureDTO，不引用具体实现（`META_SURFACE_01`）；`struct` 一律算数据；**概念编程元模块**可开关 `META_SURFACE_03`；`record`/`class` 纯数据不带行为（`META_DIR_CLASS_04`）是可选 `dataPurity`，默认关闭 |
 | **配置 DTO 隔离** | `Config/` / `Configs/` 的 PureDTO 不要求接口，但只能引用基础类型/自身 DTO，不能回引模块内类型（`META_SURFACE_04`） |
+| **目录/文件也单向** | **项目 profile（`enable.directoryModel`）**：SCC 必须同代码目录（`META_DIR_CLASS_01`）；目录单元图不得成环（`META_DIR_ACYCLIC_01`）；关闭目录模型后这组规则不运行 |
+| **行为类配接口** | **概念编程元模块（`enable.conceptProgramming`）**：模块内每个行为类至少实现一个接口（`META_SURFACE_02`）；可关闭 |
+| **命名合范式** | **项目 naming profile（`enable.naming`）**：接口 `I` 开头 · 枚举 `E` 开头（可配）· 特性 `Attribute` 结尾 · 异常 `Exception` 结尾 · 扩展类 `Extension(s)` 结尾；关闭 naming 后不判 |
+| **引用不越档** | 引用了 B，就不许再引用同一族里比 B 更具体的类型：**接口档只认接口，抽象档只认抽象，具体档不认可子类** |
 | **实现只持接口** | 字段/属性/事件不得持有本模块具体实现（`SOFT_DESIGN_01`）；具体只在构造边界出现（`SOFT_DESIGN_02`）；具体图无环（`META_REF_ACYCLIC_01`） |
 | **struct 也参与无环** | struct 是数据，但引用边仍进图：`IA -> struct -> IB -> IA` 不允许（`META_REF_ACYCLIC_02`）；纯接口环归软审 |
-| **目录/文件也单向** | SCC 必须同代码目录（`META_DIR_CLASS_01`）；同目录文件 SCC 绿，跨目录红；目录单元图不得成环（`META_DIR_ACYCLIC_01`）：取最近公共父目录的 file/dir 单元，file↔file 交给 SCC，完整图做 SCC；根目录不整体建节点、不整体豁免；空目录没有目录边；目录规则忽略 struct，struct 类型环归 `META_REF_ACYCLIC_02` |
-| **行为类配接口** | 模块内每个行为类（抽象或具体）至少实现一个接口（`META_SURFACE_02`） |
-| **命名合范式** | 接口 `I` 开头 · 枚举 `E` 开头 · 特性 `Attribute` 结尾 · 异常 `Exception` 结尾 · 扩展类 `Extension(s)` 结尾（只扩展一个本工程类型时，还要以那个类型开头） |
-| **引用不越档** | 引用了 B，就不许再引用同一族里比 B 更具体的类型：**接口档只认接口，抽象档只认抽象，具体档不认可子类** |
+
+## 项目适配层
+
+项目的引擎事实、命名策略和历史约束放在 `.phicoding/adapter.json`，不写进通用规则：
+
+```text
+universal rules 只判语义
+adapter          补 facts / 命名 / 强度 / 装饰 / 项目规则
+waiver           只处理已登记的单点例外
+```
+
+适配层可以：
+
+- 用 facts 适配器补语义事实（例如 UnrealSharp 的 `UClass(ClassFlags.Abstract)`）；
+- 用 `naming` 提供项目命名策略；
+- 用 `placement` 按语言配置原子类型目录（默认 `Models/`，可把 `enum` 放 `Enums/`）；
+- 嵌套 enum 可允许，但 `scope=containing` 时只能被包含类型内部使用；
+- 用 `rules.severity` 调整强度（`error / warn / info / off`，`off` 不是通过）；
+- 用 `rules.replace` 覆盖允许覆盖的规则（结构规则受保护）；
+- 用 `rules.add` 增加项目规则；
+- 用 `rules.decorate` 做带 trace 的 findings 装饰，不能静默变绿。
+
+规则本体不出现 `if (engine === ...)`。跑检查时若有适配层，CLI 会打印
+`== adapter ...`；`off`、`WARN`、`adapter suppressed` 都必须如实报告，不能当作绿。
+
+语言级 Profile 放在 `profiles.<language>`，可覆盖命名、目录、选项和规则强度/新增规则。
+`enable` 控制哪些是项目/个人选择：
+
+```text
+naming / directoryModel / conceptProgramming
+noElse / noSwitch / comments / blankLines / dataPurity
+```
+
+`conceptProgramming` 控制“行为类配接口 / 模块数据类配接口”的元模块；`dataPurity`
+控制“纯数据不带行为”，默认关闭；`noSwitch` 默认关闭。关闭的规则不运行、不产生 skip。
+
+例如 C# 要“一个类一个文件”，在 `profiles.cs.options.oneTypePerFile` 开启
+`PROFILE_FILE_01`；默认不启用，嵌套类型不计数，同名泛型伴生类（`Foo` + `Foo<T>`）默认豁免。
 
 ## 路由
 
 | 你现在要做的事 | 加载 |
 | --- | --- |
 | 设计框架 / 抽象 / 分层 / 决定该不该抽 / config 与类型的分工 / 装载报错策略 / 新增一个解释要写几处 | `phicoding-design` |
-| 落地模块目录：`Interfaces/` / `Models/` / 概念实现目录 / 聚合根 / 组合根 / 多接口落点 | `phicoding-design` 的「接口模块目录」+ `phicoding-check` 的模块软审 |
+| 落地模块目录：`Interfaces/` / 配置的原子目录（默认 `Models/`）/ 概念实现目录 / 聚合根 / 组合根 / 多接口落点 | `phicoding-design` 的「接口模块目录」+ `phicoding-check` 的模块软审 |
 | 判断谁能看谁、注入太深、底层要依赖上层 | `phicoding-level` |
 | 写注册表 / 事件 / 管线 / 管理器 | `phicoding-shape` |
 | Unity 组件与生命周期 | `phicoding-unity` |

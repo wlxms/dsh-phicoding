@@ -29,6 +29,60 @@ DeepSeek Harness 的**常驻编码与设计准则**。
 
 Copilot 套件里对应的是 `.github/copilot-instructions.md`，同一份契约。
 
+## 项目适配层
+
+项目差异不进入规则本体。工程根可放 `.phicoding/adapter.json`：
+
+```json
+{
+  "id": "wy-ue",
+  "engine": "unreal",
+  "naming": { "interface": { "prefix": "I" } },
+  "placement": {
+    "cs": {
+      "atoms": { "enum": ["Enums"], "struct": ["Models"], "recordstruct": ["Models"] },
+      "nested": { "enum": { "allow": true, "scope": "containing" } }
+    }
+  },
+  "rules": {
+    "severity": { "META_NAMING_02": "warn" },
+    "add": ["./rules/WY_NAMING_01.mjs"]
+  }
+}
+```
+
+它做六件事：`facts` 补语义事实、`naming` 给命名策略、`placement` 按语言配原子目录和嵌套
+enum 范围、`severity` 调强度、`replace` 覆盖允许覆盖的规则、`decorate` 做带 trace 的装饰；
+`add` 增加项目规则。结构性规则受保护，不能被替换。默认原子目录是 `Models/`，可以改为
+`Enums/`、`Structs/` 等；空目录配置是错误，不是关闭规则。
+
+`off`、`WARN`、`adapter suppressed` 都会出现在报告里，不算 `green`。完整接口见
+[`checks/adapters.mjs`](checks/adapters.mjs) 与 [`checks/README.md`](checks/README.md)。
+
+语言级 Profile 放在 `profiles.<language>`。例如 C# 要求一个类一个文件：
+
+```json
+{
+  "profiles": {
+    "cs": {
+      "options": { "oneTypePerFile": true }
+    }
+  }
+}
+```
+
+它启用 `PROFILE_FILE_01`；默认关闭，嵌套类型不计数，`partial` 同名声明算同一个类型。
+`Foo` 与 `Foo<T>` 是不同 arity，同一个文件里的同名泛型伴生类默认豁免
+（`exemptGenericSameName: false` 可关闭）；`Foo` 与不同名的 `Bar<T>` 仍算两个类型。
+需要把 interface / enum 也纳入“一个类型一个文件”时，使用对象形式：
+
+```json
+"oneTypePerFile": {
+  "enabled": true,
+  "kinds": ["class", "record", "interface", "enum", "struct", "recordstruct"]
+}
+```
+
 ## 八条核心哲学（序号即优先级）
 
 1. **以人为本** —— 简单清晰易读 > 高性能。2. **最小实现**。3. **能力完备**。4. **最小最简命名**。

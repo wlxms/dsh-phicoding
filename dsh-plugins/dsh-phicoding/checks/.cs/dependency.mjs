@@ -10,11 +10,11 @@
 // only the creation edge is concrete. This is why the family can allow both
 // patterns without a declaration.
 
-import { bare } from '../layout.mjs'
+import { bare, isAbstractType } from '../layout.mjs'
 import { cyclesOf, duplicateSkip, parents, waives } from './model.mjs'
 
 const isInterface = (type) => type?.kind === 'interface'
-const isAbstract = (type) => Boolean(type) && !isInterface(type) && type.isAbstract === true
+const isAbstract = (type) => Boolean(type) && !isInterface(type) && isAbstractType(type)
 
 function inherits(byName, type, ancestor, cache, seen = new Set()) {
   const key = `${type.name}>${ancestor}`
@@ -61,18 +61,27 @@ export function checkReferenceDegree(model) {
   for (const owner of model.facts.types ?? []) {
     if (owner.kind === 'interface') continue
 
-    const why = waives(owner, ['META_REF_LEVEL_01', 'D-01', '0750'])
+    const why = waives(owner, ['META_REF_LEVEL_01', 'D-01'])
     if (why) {
       excused[why] = (excused[why] ?? 0) + 1
       continue
     }
 
+    // A base class can force an interface into every derived type. That forced
+    // interface is not the derived type's own contract: remove it from both the
+    // baseline and the recomputed reference set, then judge what remains.
+    const inherited = model.inheritedBaseReferences(owner)
     const required = model.requiredReferences(owner)
+    for (const name of inherited) required.delete(name)
+
     const targets = new Map()
     for (const ref of model.references) {
       if (ref.from !== owner.name || ref.from === ref.to) continue
       // A construction edge is SOFT_DESIGN_02's subject; it is not a reference-level use.
       if (creationAt.has(`${ref.from}|${ref.to}|${ref.line}`)) continue
+      // The base contract already forced this type; it does not belong to the
+      // derived type's recomputed reference set.
+      if (inherited.has(ref.to)) continue
       if (!targets.has(ref.to)) targets.set(ref.to, ref)
     }
 

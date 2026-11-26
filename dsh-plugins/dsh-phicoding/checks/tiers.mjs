@@ -49,8 +49,56 @@ export const META_STAGES = [
   }
 ]
 
-export const PROFILE_RULES = ['PROFILE_STYLE_01', 'PROFILE_STYLE_02', 'PROFILE_STYLE_03']
+export const PROFILE_RULES = ['PROFILE_STYLE_01', 'PROFILE_STYLE_02', 'PROFILE_STYLE_03', 'PROFILE_STYLE_04', 'PROFILE_FILE_01']
 export const SOFT_RULES = ['SOFT_DESIGN_01', 'SOFT_DESIGN_02']
+
+// A project adapter may replace a rule implementation only when the rule's
+// invariant is project-shaped. Structural/pipeline rules stay in the universal
+// core; adapters can enrich facts or adjust severity, not replace them.
+export const PROTECTED_RULES = new Set([
+  'META_REF_ACYCLIC_01',
+  'META_REF_ACYCLIC_02',
+  'META_REF_LEVEL_01',
+  'META_DIR_ACYCLIC_01',
+  'META_DIR_CLASS_01',
+  'META_DIR_CLASS_02',
+  'META_DIR_CLASS_03'
+])
+
+export function canReplaceRule(id) {
+  return !PROTECTED_RULES.has(resolveRuleId(id))
+}
+
+// Project/personal profile gates. These are deliberate policy choices, not
+// universal laws: a project can turn naming/directory/style/concept rules off
+// without making the core dependency invariants optional.
+export function ruleEnabled(id, language, config) {
+  const rule = resolveRuleId(id)
+  const key = String(language ?? '').replace(/^\./, '')
+  const profile = config?.profiles?.[key] ?? {}
+  const enable = profile.enable ?? {}
+  const on = (name, fallback = true) => (enable[name] === undefined ? fallback : enable[name] !== false)
+  if (rule === 'PROFILE_FILE_01') {
+    const value = profile.oneTypePerFile
+    return value === true || value?.enabled === true
+  }
+  if (rule === 'META_DIR_CLASS_04') return enable.dataPurity === true
+  if (rule === 'PROFILE_STYLE_04') return enable.noSwitch === true
+  if (rule === 'PROFILE_STYLE_01') return on('noElse')
+  if (rule === 'PROFILE_STYLE_02') return on('comments')
+  if (rule === 'PROFILE_STYLE_03') return on('blankLines')
+  if (['META_NAMING_01', 'META_NAMING_02'].includes(rule)) return on('naming')
+  if (['META_DIR_ACYCLIC_01', 'META_DIR_CLASS_01', 'META_DIR_CLASS_02', 'META_DIR_CLASS_03'].includes(rule)) {
+    return on('directoryModel')
+  }
+  if (['META_SURFACE_02', 'META_SURFACE_03'].includes(rule)) return on('conceptProgramming')
+  return true
+}
+
+// Backward-compatible name used by the CLI and older tests.
+export function profileRuleEnabled(id, language, config) {
+  return ruleEnabled(id, language, config)
+}
 
 // Transition aliases. Old C/D/M/number IDs and the intermediate dash IDs still
 // resolve; emitted IDs and documentation always use LEVEL_MODULE_CODE.

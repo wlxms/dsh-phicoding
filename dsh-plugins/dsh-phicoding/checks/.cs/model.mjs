@@ -12,7 +12,7 @@
 // fact is added here once and every rule gets it.
 
 import { readFileSync } from 'node:fs'
-import { bare, implementedInterfaces, isInInterfaces, layout } from '../layout.mjs'
+import { bare, implementedInterfaces, isAbstractType, isInInterfaces, layout } from '../layout.mjs'
 
 const DATA_KINDS = new Set(['enum', 'struct', 'record', 'recordstruct', 'class'])
 const HOLD_MEMBER_KINDS = new Set(['field', 'property', 'event', 'eventfield'])
@@ -60,7 +60,7 @@ const dataShape = (type) => {
   // behavior to be judged by a separate struct-behavior rule, not by turning it
   // into a class-shaped concept with an interface. Likewise an enum is data.
   if (type.kind === 'struct' || type.kind === 'recordstruct' || type.kind === 'enum') return true
-  if (type.kind === 'interface' || type.isStatic || type.isAbstract) return false
+  if (type.kind === 'interface' || type.isStatic || isAbstractType(type)) return false
   if (!DATA_KINDS.has(type.kind)) return false
   if (type.kind === 'class' && !type.isSealed) return false
   if (parents(type).length > 0) return false
@@ -169,7 +169,7 @@ export function buildModel(facts, changedFiles) {
   const rootImplementations = new Set()
   const aggregateRoots = new Set()
   for (const type of facts.types ?? []) {
-    if (!['class', 'record'].includes(type.kind) || type.isAbstract || dataShape(type)) continue
+    if (!['class', 'record'].includes(type.kind) || isAbstractType(type) || dataShape(type)) continue
     const module = state.moduleOf(type.file)
     if (module == null) continue
     const roots = conceptRoots.get(module)
@@ -199,7 +199,7 @@ export function buildModel(facts, changedFiles) {
     else if (type.isStatic && /(?:Utility|Util|Helper)$/.test(type.name)) role = 'utility'
     else if (type.isStatic) role = 'static'
     else if (modules.length > 0 && state.moduleOf(type.file) == null) role = 'root'
-    else if (type.isAbstract) role = 'abstract'
+    else if (isAbstractType(type)) role = 'abstract'
     else if (implemented(type).size > 0) role = 'concrete'
     else role = 'invalid'
     roles.set(type.name, role)
@@ -222,6 +222,7 @@ export function buildModel(facts, changedFiles) {
           to: target,
           file: owner.file,
           line: member.line,
+          endLine: member.endLine ?? member.line,
           member: member.name,
           isStatic: member.isStatic === true
         })
@@ -254,7 +255,7 @@ export function buildModel(facts, changedFiles) {
   const factoryNames = new Set()
   const creationAt = new Set(creates.map((create) => `${create.from}|${create.to}|${create.line}`))
   for (const type of facts.types ?? []) {
-    if (!['class', 'record'].includes(type.kind) || type.isAbstract || dataShape(type)) continue
+    if (!['class', 'record'].includes(type.kind) || isAbstractType(type) || dataShape(type)) continue
     const ownCreations = creates.filter((create) => create.from === type.name)
     if (ownCreations.length === 0) continue
     const isConcreteTarget = (name) => ['concrete', 'invalid', 'root'].includes(roleOf(byName.get(name)))
@@ -351,6 +352,26 @@ export function buildModel(facts, changedFiles) {
     return required
   }
 
+  const inheritedBaseReferences = (owner) => {
+    const inherited = new Set()
+    let base = bare(owner.base)
+    if (!base) return inherited
+    const baseType = byName.get(base)
+    // An interface in `base` is a direct implementation choice, not an
+    // inherited class contract; it must still enforce the level rule.
+    if (!baseType || baseType.kind === 'interface') return inherited
+
+    const seen = new Set()
+    while (base) {
+      inherited.add(base)
+      for (const one of baseContract(base, seen)) inherited.add(one)
+      const type = byName.get(base)
+      if (!type) break
+      base = bare(type.base)
+    }
+    return inherited
+  }
+
   return {
     facts,
     state,
@@ -366,6 +387,7 @@ export function buildModel(facts, changedFiles) {
     isAggregateRoot: (name) => aggregateRoots.has(name),
     isFactory: (name) => factoryNames.has(name),
     requiredReferences,
+    inheritedBaseReferences,
     roleOf,
     data,
     utility,

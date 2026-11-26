@@ -33,35 +33,35 @@ const cases = [
   {
     name: '接口档 + 非接口子类 → 违规',
     source: `${family}
-public sealed class A { public IRoot Any { get; set; } = null!; public AbsRoot Too { get; set; } = null!; }
+public sealed class A { public void Use(IRoot any, AbsRoot too) { } }
 `,
     red: 1,
   },
   {
     name: '接口档 + 接口子类 → 合法',
     source: `${family}
-public sealed class A { public IRoot Any { get; set; } = null!; public IChild Still { get; set; } = null!; }
+public sealed class A { public void Use(IRoot any, IChild still) { } }
 `,
     red: 0,
   },
   {
     name: '抽象档 + 具体子类 → 违规',
     source: `${family}
-public sealed class A { public AbsRoot Any { get; set; } = null!; public ConcRoot Too { get; set; } = null!; }
+public sealed class A { public void Use(AbsRoot any, ConcRoot too) { } }
 `,
     red: 1,
   },
   {
     name: '抽象档 + 抽象子类 → 合法',
     source: `${family}
-public sealed class A { public AbsRoot Any { get; set; } = null!; public AbsChild Still { get; set; } = null!; }
+public sealed class A { public void Use(AbsRoot any, AbsChild still) { } }
 `,
     red: 0,
   },
   {
     name: '具体档 + 子类 → 违规（具体到底了，不许再往下）',
     source: `${family}
-public sealed class A { public ConcRoot Any { get; set; } = null!; public ConcSub Too { get; set; } = null!; }
+public sealed class A { public void Use(ConcRoot any, ConcSub too) { } }
 `,
     red: 1,
   },
@@ -69,14 +69,14 @@ public sealed class A { public ConcRoot Any { get; set; } = null!; public ConcSu
     name: '具体档 + 兄弟（同父不同枝）→ 合法',
     source: `${family}
 public sealed class Sibling : AbsRoot { }
-public sealed class A { public ConcRoot Any { get; set; } = null!; public Sibling Other { get; set; } = null!; }
+public sealed class A { public void Use(ConcRoot any, Sibling other) { } }
 `,
     red: 0,
   },
   {
     name: '族外类型 → 合法',
     source: `${family}
-public sealed class A { public IRoot Any { get; set; } = null!; public Other Unrelated { get; set; } = null!; }
+public sealed class A { public void Use(IRoot any, Other unrelated) { } }
 `,
     red: 0,
   },
@@ -88,8 +88,7 @@ public sealed class A { public IRoot Any { get; set; } = null!; public Other Unr
 
 public sealed class Forge
 {
-    public IRoot Any { get; set; } = null!;
-    public ConcRoot Made { get; set; } = null!;
+    public void Use(IRoot any, ConcRoot made) { }
 }
 `,
     },
@@ -104,8 +103,7 @@ public sealed class Forge
 // [Administrator 2026-10-18 waive=META_REF_LEVEL_01 why=plumbing] UE 只能按具体类型注册
 public sealed class Forge
 {
-    public IRoot Any { get; set; } = null!;
-    public ConcRoot Made { get; set; } = null!;
+    public void Use(IRoot any, ConcRoot made) { }
 }
 `,
     },
@@ -119,14 +117,12 @@ public sealed class Forge
 // [Administrator 2026-10-18 waive=D-01 why=plumbing] 只放行我自己
 public sealed class Forge
 {
-    public IRoot Any { get; set; } = null!;
-    public ConcRoot Made { get; set; } = null!;
+    public void Use(IRoot any, ConcRoot made) { }
 }
 
 public sealed class Sloppy
 {
-    public IRoot Any { get; set; } = null!;
-    public ConcRoot Made { get; set; } = null!;
+    public void Use(IRoot any, ConcRoot made) { }
 }
 `,
     },
@@ -144,8 +140,7 @@ public class ConcRoot : IRoot { }
 
 public sealed class User
 {
-    public IRoot Any { get; set; } = null!;
-    public ConcRoot Made { get; set; } = null!;
+    public void Use(IRoot any, ConcRoot made) { }
 }
 `,
       'B.cs': `namespace B;
