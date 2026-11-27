@@ -41,6 +41,7 @@ $skillsSource = Join-Path $plugin 'skills'
 $skillsTarget = Join-Path $CopilotHome 'skills'
 $checkerTarget = Join-Path $CopilotHome 'phicoding'
 $manifestPath = Join-Path $CopilotHome '.installed.json'
+$userInstruction = Join-Path $CopilotHome 'copilot-instructions.md'
 $onWindows = $env:OS -eq 'Windows_NT'
 
 if (-not (Test-Path $plugin)) { throw "找不到插件目录：$plugin" }
@@ -93,6 +94,13 @@ if ($Unlink) {
         if (Remove-LinkOrDir $link) { Write-Note "解除 $link" }
     }
     if (Remove-LinkOrDir $checkerTarget) { Write-Note "解除 $checkerTarget" }
+    if (Test-Path $userInstruction) {
+        $text = Get-Content $userInstruction -Raw
+        $next = [regex]::Replace($text, '(?s)<!-- phicoding:start -->.*?<!-- phicoding:end -->', '').Trim()
+        if ($next) { Set-Content $userInstruction $next -Encoding utf8 }
+        else { Remove-Item $userInstruction -Force }
+        Write-Note "移除用户级 instruction 块 $userInstruction"
+    }
     if (Test-Path $manifestPath) {
         $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
         if ($manifest.mode -eq 'link') {
@@ -126,6 +134,16 @@ if (Test-Path $checkerTarget) {
 New-DirectoryLink $checkerTarget $plugin
 Write-Note "检查器 -> $plugin"
 
+$runner = Join-Path $checkerTarget 'checks\phicoding.mjs'
+$instructionHelper = Join-Path $plugin 'scripts\copilot-kit\copilot-instruction.mjs'
+$instructionTemplate = Join-Path $plugin 'scripts\copilot-kit\copilot-instructions.user.md'
+if (-not (Test-Path $instructionHelper) -or -not (Test-Path $instructionTemplate)) {
+    throw '找不到用户级 instruction 模板或合并脚本。'
+}
+& node $instructionHelper $instructionTemplate $userInstruction $skillsTarget $runner
+if ($LASTEXITCODE -ne 0) { throw "写入用户级 instruction 失败（exit $LASTEXITCODE）" }
+Write-Note "用户级 instruction -> $userInstruction"
+
 if (Test-Path $manifestPath) {
     if (-not $backedUp) {
         New-Item -ItemType Directory -Path $backup -Force | Out-Null
@@ -142,6 +160,7 @@ if (Test-Path $manifestPath) {
     linkedAt    = (Get-Date).ToUniversalTime().ToString('o')
     backup      = $(if ($backedUp) { $backup } else { $null })
     destination = $CopilotHome
+    instruction = $userInstruction
 } | ConvertTo-Json -Depth 4 | Set-Content $manifestPath -Encoding utf8
 
 Write-Host ''

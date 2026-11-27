@@ -7,6 +7,7 @@
   从 GitHub 拉取源码，现场构建，然后装到你的账户下：
     - 6 个技能  →  ~/.copilot/skills/<name>/SKILL.md   （VS Code 个人 Agent Skills）
     - 检查器    →  ~/.copilot/phicoding/               （Node + Roslyn 语法底座）
+    - 用户级 instruction → ~/.copilot/copilot-instructions.md（只合并 phicoding 块）
 
   同一个脚本既是安装也是更新：它会比对内容指纹，没变化就什么都不做，有变化就整份替换。
   记录写在 <目标>/.installed.json。
@@ -62,6 +63,7 @@ if (-not $Destination) {
 $manifestPath = Join-Path $Destination '.installed.json'
 $checker = Join-Path $Destination 'phicoding'
 $skills = Join-Path $Destination 'skills'
+$userInstruction = Join-Path $Destination 'copilot-instructions.md'
 $sharedSkills = Join-Path $env:USERPROFILE '.agents\skills'
 
 # ---- 卸载：不联网，只删自己装过的东西 --------------------------------------
@@ -73,6 +75,13 @@ if ($Uninstall) {
         }
     }
     if (Test-Path $checker) { Remove-InstallEntry $checker }
+    if (Test-Path $userInstruction) {
+        $text = Get-Content $userInstruction -Raw
+        $next = [regex]::Replace($text, '(?s)<!-- phicoding:start -->.*?<!-- phicoding:end -->', '').Trim()
+        if ($next) { Set-Content $userInstruction $next -Encoding utf8 }
+        else { Remove-Item $userInstruction -Force }
+        Write-Note "移除用户级 instruction 块 $userInstruction"
+    }
     if (Test-Path $manifestPath) { Remove-Item $manifestPath -Force; Write-Note "删除 $manifestPath" }
     Write-Host '已卸载。' -ForegroundColor Green
     return
@@ -111,7 +120,7 @@ try {
     # ---- 比对指纹：这一步决定了它是"安装"还是"更新"，或者什么都不用做 ----
     $incoming = Get-Content (Join-Path $kit 'VERSION.json') -Raw | ConvertFrom-Json
     $installed = if (Test-Path $manifestPath) { Get-Content $manifestPath -Raw | ConvertFrom-Json } else { $null }
-    $intact = Test-Path (Join-Path $checker 'checks\phicoding.mjs')
+    $intact = (Test-Path (Join-Path $checker 'checks\phicoding.mjs')) -and (Test-Path $userInstruction)
 
     if ($installed -and $installed.hash -eq $incoming.hash -and $intact -and -not $Force) {
         Write-Host ''
@@ -137,6 +146,15 @@ try {
     # 否则 Copilot 会去 PATH 里找一个不存在的命令。
     # 每次安装都是先用源文件覆盖、再追加，所以反复更新不会堆出多行。
     $runner = Join-Path $checker 'checks\phicoding.mjs'
+    $instruction = Join-Path $kit 'copilot-instruction.mjs'
+    $instructionTemplate = Join-Path $kit 'copilot-instructions.user.md'
+    if (-not (Test-Path $instruction) -or -not (Test-Path $instructionTemplate)) {
+        throw '套件缺少用户级 instruction 模板。'
+    }
+    & node $instruction $instructionTemplate $userInstruction $skills $runner
+    if ($LASTEXITCODE -ne 0) { throw "写入用户级 instruction 失败（exit $LASTEXITCODE）" }
+    Write-Note "用户级 instruction → $userInstruction"
+
     $note = "`n> **本机安装位置**：检查器在 ``$runner``。运行：``node `"$runner`" --root <项目>``。`n"
     foreach ($name in @('phicoding', 'phicoding-check')) {
         $file = Join-Path $skills (Join-Path $name 'SKILL.md')
@@ -157,6 +175,7 @@ try {
         skills         = $incoming.skills
         installedAt    = (Get-Date).ToUniversalTime().ToString('o')
         destination    = $Destination
+        instruction    = $userInstruction
     } | ConvertTo-Json -Depth 4 | Set-Content $manifestPath -Encoding utf8
 
     Write-Host ''

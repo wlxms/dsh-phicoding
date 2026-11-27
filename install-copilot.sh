@@ -6,6 +6,7 @@
 # 从 GitHub 拉源码，现场构建，然后装到：
 #   ~/.copilot/skills/<name>/SKILL.md   VS Code 的个人 Agent Skills
 #   ~/.copilot/phicoding/               检查器（Node + Roslyn 语法底座）
+#   ~/.copilot/copilot-instructions.md  用户级 instruction（只合并 phicoding 块）
 #
 # 同一个脚本既是安装也是更新：比对内容指纹，没变化就什么都不做，有变化就整份替换。
 # 记录写在 <目标>/.installed.json。
@@ -37,6 +38,7 @@ done
 
 MANIFEST="$DEST/.installed.json"
 CHECKER="$DEST/phicoding"
+INSTRUCTION="$DEST/copilot-instructions.md"
 SHARED_DIR="$HOME/.agents/skills"
 
 # ---- 卸载：不联网，只删自己装过的东西 --------------------------------------
@@ -51,6 +53,12 @@ if [ "$UNINSTALL" -eq 1 ]; then
   done
   # 不能用 `[ -d x ] && rm`：set -e 下条件为假就会让整个脚本退出。
   if [ -d "$CHECKER" ]; then rm -rf "$CHECKER"; echo "  删除 $CHECKER"; fi
+  if [ -f "$INSTRUCTION" ]; then
+    tmp="$INSTRUCTION.phicoding.tmp"
+    awk '/<!-- phicoding:start -->/{skip=1;next}/<!-- phicoding:end -->/{skip=0;next}!skip' "$INSTRUCTION" > "$tmp"
+    if [ -s "$tmp" ]; then mv "$tmp" "$INSTRUCTION"; else rm -f "$tmp" "$INSTRUCTION"; fi
+    echo "  移除用户级 instruction 块 $INSTRUCTION"
+  fi
   if [ -f "$MANIFEST" ]; then rm -f "$MANIFEST"; echo "  删除 $MANIFEST"; fi
   echo "已卸载。"
   exit 0
@@ -81,7 +89,7 @@ field() {
 INCOMING_HASH=$(field "$SCRATCH/kit/VERSION.json" hash)
 INCOMING_FILES=$(field "$SCRATCH/kit/VERSION.json" files)
 
-if [ -f "$MANIFEST" ] && [ -f "$CHECKER/checks/phicoding.mjs" ] && [ "$FORCE" -eq 0 ]; then
+if [ -f "$MANIFEST" ] && [ -f "$CHECKER/checks/phicoding.mjs" ] && [ -f "$INSTRUCTION" ] && [ "$FORCE" -eq 0 ]; then
   INSTALLED_HASH=$(field "$MANIFEST" hash)
   if [ "$INSTALLED_HASH" = "$INCOMING_HASH" ]; then
     echo ""
@@ -102,6 +110,7 @@ cp -R "$SCRATCH/kit/phicoding" "$CHECKER"
 echo "  检查器 → $CHECKER"
 
 RUNNER="$CHECKER/checks/phicoding.mjs"
+node "$SCRATCH/kit/copilot-instruction.mjs" "$SCRATCH/kit/copilot-instructions.user.md" "$INSTRUCTION" "$DEST/skills" "$RUNNER"
 # 技能正文里写的是抽象的 `phicoding --root <项目>`；这台机器上的真实路径要说清楚，
 # 否则 Copilot 会去 PATH 里找一个不存在的命令。
 # 每次安装都是先用源文件覆盖、再追加，所以反复更新不会堆出多行。
@@ -124,7 +133,8 @@ cat > "$MANIFEST" <<EOF
   "files": $INCOMING_FILES,
   "ref": "$REF",
   "installedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "destination": "$DEST"
+  "destination": "$DEST",
+  "instruction": "$INSTRUCTION"
 }
 EOF
 

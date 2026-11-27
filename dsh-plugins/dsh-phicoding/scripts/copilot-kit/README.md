@@ -56,6 +56,20 @@ node phicoding/checks/phicoding.mjs --root . --list   # 列出规则
 在 Copilot Chat 里直接说"按 phicoding 设计这个功能"，它会自动加载对应技能；
 也可以敲 `/phicoding`、`/phicoding-check` 显式调用。
 
+## 用户级安装（不是项目仓库）
+
+仓库级安装只写 `.github/copilot-instructions.md`，换仓库就失效。要所有项目都生效，
+用用户级 instruction：
+
+```text
+~/.copilot/copilot-instructions.md
+```
+
+根目录的 `install-copilot.ps1` / `install-copilot.sh` 会生成受管理块并合并进这个文件，
+不会覆盖其它个人指令；技能装到 `~/.copilot/skills/`，检查器装到 `~/.copilot/phicoding/`。
+更新安装器或跑 `link-copilot.ps1` 时会同步更新该块；卸载时只移除
+`<!-- phicoding:start -->` 到 `<!-- phicoding:end -->` 之间的内容。
+
 **增量开发**：`--session-begin` / `--diff` 只判这次动过的行，把"全红"变成"没变坏"，
 适合装进已有工程。
 

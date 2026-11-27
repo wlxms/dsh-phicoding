@@ -30,7 +30,8 @@ irm https://raw.githubusercontent.com/wlxms/dsh-phicoding/main/install-copilot.p
 curl -fsSL https://raw.githubusercontent.com/wlxms/dsh-phicoding/main/install-copilot.sh | sh
 ```
 
-脚本会从 GitHub 拉源码、现场构建，然后装到 `~/.copilot/skills/`（技能）与 `~/.copilot/phicoding/`（检查器）。
+脚本会从 GitHub 拉源码、现场构建，然后装到 `~/.copilot/skills/`（技能）、`~/.copilot/phicoding/`（检查器）
+和 `~/.copilot/copilot-instructions.md`（用户级 instruction；只合并 `phicoding` 块，不覆盖你已有的个人指令）。
 `-Shared` / `--shared` 会同时装到 `~/.agents/skills/`（跨 Agent 的标准位置）。
 
 **同一个脚本就是更新器**：再跑一次即可。它比对内容指纹，没变化就什么都不做，有变化就整份替换并打印新旧指纹。
@@ -53,7 +54,8 @@ pwsh -NoProfile -File .\link-copilot.ps1
 ```
 
 Windows 创建符号链接通常需要管理员权限，脚本用 **junction（目录重解析点）** 做等价链接；
-它会把 `~/.copilot/skills/phicoding*` 和 `~/.copilot/phicoding` 指到本仓库的
+它会把 `~/.copilot/skills/phicoding*`、`~/.copilot/phicoding` 指到本仓库的
+插件目录，并写入/更新 `~/.copilot/copilot-instructions.md` 中受管理的 `phicoding` 块。
 `dsh-plugins/dsh-phicoding`。已有的真实安装先备份到
 `~/.copilot/backup-before-link-<时间>/`，可手工回滚。
 
